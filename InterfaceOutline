@@ -25,3 +25,31 @@ PTT
 Heart rate
 Signal-quality/error status
 Possibly raw/processed waveform data for debugging
+
+Milestone 1
+
+Generate/sample an artificial PPG waveform.
+
+Milestone 2
+
+Detect heartbeats from it.
+
+Milestone 3
+
+Sample an artificial PPG + PPG pair.
+
+Milestone 4
+
+Calculate PTT from those signals.
+
+Milestone 5
+
+Do it with actual sensors.
+
+Milestone 6
+
+Handle motion/noise.
+
+Milestone 7
+
+Map PTT → BP.
