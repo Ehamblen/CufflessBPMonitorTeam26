@@ -1,0 +1,27 @@
+Inputs:
+
+PPG analog signal
+second PPG signal
+ADC sampling data
+Possibly battery/power status
+user calibration coefficients
+
+Processing:
+
+ADC acquisition
+Filtering
+Signal conditioning
+Heartbeat/peak detection
+PPG timing detection
+PTT calculation
+BP estimation
+Signal-quality checking
+
+Outputs:
+
+Systolic BP
+Diastolic BP
+PTT
+Heart rate
+Signal-quality/error status
+Possibly raw/processed waveform data for debugging
