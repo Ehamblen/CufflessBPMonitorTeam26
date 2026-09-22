@@ -19,38 +19,64 @@
  */
 double generate_ppg_pulse(double t)
 {
-    double pulse_width = 0.35;
+    double pulse_width = 0.40;
 
     if (t < 0.0 || t > pulse_width)
         return 0.0;
 
     /*
-     * Gaussian-like pulse.
+     * Main systolic peak.
      *
-     * The main peak occurs near the beginning of the pulse,
-     * followed by a gradual decay.
+     * Narrower than the original so that the pulse has
+     * a sharper rise and leaves room for the reflected wave.
      */
-    double center = 0.08;
-    double sigma = 0.055;
+    double main_center = 0.065;
+    double main_sigma = 0.032;
 
-    double pulse = exp(
-        -((t - center) * (t - center)) /
-        (2.0 * sigma * sigma)
+    double main_pulse = exp(
+        -((t - main_center) * (t - main_center)) /
+        (2.0 * main_sigma * main_sigma)
     );
 
     /*
-     * Add a smaller secondary feature representing
-     * the dicrotic notch / reflected wave.
+     * Dicrotic notch.
+     *
+     * A small negative Gaussian creates a dip in the
+     * descending portion of the waveform.
      */
-    double secondary_center = 0.20;
-    double secondary_sigma = 0.025;
+    double notch_center = 0.135;
+    double notch_sigma = 0.018;
 
-    double secondary = 0.20 * exp(
+    double notch = 0.14 * exp(
+        -((t - notch_center) * (t - notch_center)) /
+        (2.0 * notch_sigma * notch_sigma)
+    );
+
+    /*
+     * Reflected / secondary wave.
+     *
+     * This is intentionally smaller than the primary peak.
+     */
+    double secondary_center = 0.175;
+    double secondary_sigma = 0.030;
+
+    double secondary = 0.30 * exp(
         -((t - secondary_center) * (t - secondary_center)) /
         (2.0 * secondary_sigma * secondary_sigma)
     );
 
-    return pulse + secondary;
+    /*
+     * Combine the components.
+     */
+    double pulse = main_pulse - notch + secondary;
+
+    /*
+     * Prevent the notch from producing negative values.
+     */
+    if (pulse < 0.0)
+        pulse = 0.0;
+
+    return pulse;
 }
 
 /*
