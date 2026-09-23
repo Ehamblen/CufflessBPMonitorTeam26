@@ -52,11 +52,6 @@ double generate_ppg_pulse(double t)
         (2.0 * notch_sigma * notch_sigma)
     );
 
-    /*
-     * Reflected / secondary wave.
-     *
-     * This is intentionally smaller than the primary peak.
-     */
     double secondary_center = 0.175;
     double secondary_sigma = 0.030;
 
@@ -79,9 +74,6 @@ double generate_ppg_pulse(double t)
     return pulse;
 }
 
-/*
- * Generate small random noise between -1 and +1.
- */
 double random_noise(void)
 {
     return ((double)rand() / RAND_MAX) * 2.0 - 1.0;
@@ -98,24 +90,24 @@ int main(void)
 
     for (int i = 0; i < total_samples; i++)
     {
-        /*
-         * Current sample time.
-         */
+        
+         // Current sample time.
+         
         double time = i / SAMPLE_RATE;
 
-        /*
-         * Position within the current heartbeat.
-         */
+        
+         //Position within the current heartbeat.
+         
         double beat_time = fmod(time, beat_period);
 
-        /*
-         * Generate the PPG pulse.
-         */
+        
+         //Generate the PPG pulse.
+         
         double ppg = generate_ppg_pulse(beat_time);
 
-        /*
-         * Add a small amount of random noise.
-         */
+        
+         //Add a small amount of random noise.
+         
         ppg += NOISE_AMPLITUDE * random_noise();
 
         /*

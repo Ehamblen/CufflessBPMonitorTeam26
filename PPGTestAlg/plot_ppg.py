@@ -13,7 +13,7 @@ print(f"Exists: {csv_file.exists()}")
 print(f"Size: {csv_file.stat().st_size} bytes")
 
 # Read the CSV
-data = pd.read_csv(csv_file, encoding="utf-16")
+data = pd.read_csv(csv_file, encoding="utf-8")
 
 # Plot
 plt.figure(figsize=(12, 5))
