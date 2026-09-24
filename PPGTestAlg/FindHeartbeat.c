@@ -10,6 +10,7 @@
 #define MAX_BPM 200.0
 
 #define MIN_BEAT_DISTANCE ((int)(SAMPLE_RATE * 60.0 / MAX_BPM))
+#define MIN_PEAK_AMPLITUDE 0.5
 
 #define MAX_SAMPLES 10000
 #define MAX_BEATS 1000
@@ -45,15 +46,6 @@ int main(void)
             continue;
         }
 
-        /*
-         * Try to parse:
-         *
-         * Time,PPG
-         *
-         * or
-         *
-         * 0.0000,0.136926
-         */
         if (sscanf(line, "%lf,%lf", &time, &value) == 2)
         {
             if (num_samples < MAX_SAMPLES)
@@ -64,9 +56,7 @@ int main(void)
         }
         else
         {
-            /*
-             * This will catch the header.
-             */
+
             printf("Skipping line: %s", line);
         }
     }
@@ -113,19 +103,11 @@ int main(void)
 
     for (int i = 1; i < num_samples - 1; i++)
     {
-        /*
-         * Local maximum:
-         *
-         *       X
-         *      / \
-         *     /   \
-         * ---/-----\---
-         *
-         * filtered[i] must be larger than its neighbors.
-         */
+
         int is_peak =
             filtered[i] > filtered[i - 1] &&
-            filtered[i] > filtered[i + 1];
+            filtered[i] > filtered[i + 1] &&
+            filtered[i] > MIN_PEAK_AMPLITUDE;
 
         if (!is_peak)
         {
