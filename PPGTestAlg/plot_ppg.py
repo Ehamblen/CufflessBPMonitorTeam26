@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 script_directory = Path(__file__).parent
 
 # Explicitly locate the CSV in the same directory
-csv_file = script_directory / "ppg_data.csv"
+csv_file = script_directory / "finger_ppg.csv"
 
 print(f"Reading: {csv_file}")
 print(f"Exists: {csv_file.exists()}")

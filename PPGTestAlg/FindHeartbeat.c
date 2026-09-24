@@ -29,18 +29,10 @@ int main(void)
     int num_samples = 0;
 
     char line[256];
-
-    /*
-     * Read the CSV one line at a time.
-     */
     while (fgets(line, sizeof(line), file) != NULL)
     {
         double time;
         double value;
-
-        /*
-         * Skip blank lines.
-         */
         if (line[0] == '\n' || line[0] == '\r')
         {
             continue;
@@ -71,11 +63,10 @@ int main(void)
         return 1;
     }
 
-    /*
-     * ---------------------------------------------------------
-     * STEP 1: Simple 3-point moving-average filter
-     * ---------------------------------------------------------
-     */
+    
+    
+    //STEP 1: Simple 3-point moving-average filter
+     
 
     double filtered[MAX_SAMPLES];
 
@@ -90,11 +81,7 @@ int main(void)
              ppg[i + 1]) / 3.0;
     }
 
-    /*
-     * ---------------------------------------------------------
-     * STEP 2: Find local maxima
-     * ---------------------------------------------------------
-     */
+    // STEP 2: Find local maxima
 
     int beat_indices[MAX_BEATS];
     int num_beats = 0;
@@ -114,10 +101,8 @@ int main(void)
             continue;
         }
 
-        /*
-         * Make sure this peak is far enough away from
-         * the previous heartbeat.
-         */
+        // Make sure this peak is far enough away from
+        // the previous heartbeat.
         if (i - last_beat < MIN_BEAT_DISTANCE)
         {
             continue;
@@ -132,11 +117,7 @@ int main(void)
         }
     }
 
-    /*
-     * ---------------------------------------------------------
-     * STEP 3: Print detected beats
-     * ---------------------------------------------------------
-     */
+    // STEP 3: Print detected beats
 
     printf("\nDetected %d beats:\n\n", num_beats);
 
@@ -154,11 +135,7 @@ int main(void)
         );
     }
 
-    /*
-     * ---------------------------------------------------------
-     * STEP 4: Calculate beat-to-beat intervals
-     * ---------------------------------------------------------
-     */
+    // STEP 4: Calculate beat-to-beat intervals
 
     if (num_beats < 2)
     {
@@ -206,11 +183,7 @@ int main(void)
         valid_intervals++;
     }
 
-    /*
-     * ---------------------------------------------------------
-     * STEP 5: Calculate average heart rate
-     * ---------------------------------------------------------
-     */
+    // STEP 5: Calculate average heart rate
 
     if (valid_intervals > 0)
     {
