@@ -1,74 +1,51 @@
-
 #include <stdio.h>
-#include <stdlib.h>
 #include <math.h>
-#include <ctype.h>
 
-#define SAMPLE_RATE 100.0
+#include "findheartbeat.h"
 
 #define MIN_BPM 40.0
 #define MAX_BPM 200.0
 
-#define MIN_BEAT_DISTANCE ((int)(SAMPLE_RATE * 60.0 / MAX_BPM))
+// Minimum amplitude required for a point to be considered
+// a heartbeat peak.
+//
+// This works for our current synthetic PPG signal.
+// Later, this should become adaptive for real sensor data.
 #define MIN_PEAK_AMPLITUDE 0.5
 
-#define MAX_SAMPLES 10000
-#define MAX_BEATS 1000
 
-int main(void)
+int FindHeartbeats(
+    const double ppg[],
+    int num_samples,
+    double sample_rate,
+    int beat_indices[]
+)
 {
-    FILE *file = fopen("ppg_data.csv", "r");
-
-    if (file == NULL)
+    if (ppg == NULL ||
+        beat_indices == NULL ||
+        num_samples < 3 ||
+        sample_rate <= 0.0)
     {
-        printf("Error: Could not open ppg_data.csv\n");
-        return 1;
+        return 0;
     }
 
-    double ppg[MAX_SAMPLES];
-    int num_samples = 0;
+    // Minimum number of samples between beats.
+    //
+    // For example:
+    //
+    // 100 Hz / (200 BPM / 60)
+    // = 30 samples
+    int min_beat_distance =
+        (int)(sample_rate * 60.0 / MAX_BPM);
 
-    char line[256];
-    while (fgets(line, sizeof(line), file) != NULL)
-    {
-        double time;
-        double value;
-        if (line[0] == '\n' || line[0] == '\r')
-        {
-            continue;
-        }
-
-        if (sscanf(line, "%lf,%lf", &time, &value) == 2)
-        {
-            if (num_samples < MAX_SAMPLES)
-            {
-                ppg[num_samples] = value;
-                num_samples++;
-            }
-        }
-        else
-        {
-
-            printf("Skipping line: %s", line);
-        }
-    }
-
-    fclose(file);
-
-    printf("\nRead %d samples\n", num_samples);
-
-    if (num_samples < 3)
-    {
-        printf("Not enough samples for peak detection.\n");
-        return 1;
-    }
-
-    
-    
-    //STEP 1: Simple 3-point moving-average filter
-     
+    // STEP 1: Simple 3-point moving average
 
     double filtered[MAX_SAMPLES];
+
+    if (num_samples > MAX_SAMPLES)
+    {
+        num_samples = MAX_SAMPLES;
+    }
 
     filtered[0] = ppg[0];
     filtered[num_samples - 1] = ppg[num_samples - 1];
@@ -83,13 +60,17 @@ int main(void)
 
     // STEP 2: Find local maxima
 
-    int beat_indices[MAX_BEATS];
     int num_beats = 0;
 
-    int last_beat = -MIN_BEAT_DISTANCE;
+    int last_beat = -min_beat_distance;
 
     for (int i = 1; i < num_samples - 1; i++)
     {
+        // A heartbeat must:
+        //
+        // 1. Be a local maximum
+        // 2. Be above the amplitude threshold
+        // 3. Be far enough from the previous heartbeat
 
         int is_peak =
             filtered[i] > filtered[i - 1] &&
@@ -101,9 +82,7 @@ int main(void)
             continue;
         }
 
-        // Make sure this peak is far enough away from
-        // the previous heartbeat.
-        if (i - last_beat < MIN_BEAT_DISTANCE)
+        if (i - last_beat < min_beat_distance)
         {
             continue;
         }
@@ -117,97 +96,5 @@ int main(void)
         }
     }
 
-    // STEP 3: Print detected beats
-
-    printf("\nDetected %d beats:\n\n", num_beats);
-
-    for (int i = 0; i < num_beats; i++)
-    {
-        double time =
-            beat_indices[i] / SAMPLE_RATE;
-
-        printf(
-            "Beat %3d: sample %4d, time %.2f s, amplitude %.3f\n",
-            i + 1,
-            beat_indices[i],
-            time,
-            filtered[beat_indices[i]]
-        );
-    }
-
-    // STEP 4: Calculate beat-to-beat intervals
-
-    if (num_beats < 2)
-    {
-        printf("\nNot enough beats to calculate heart rate.\n");
-        return 0;
-    }
-
-    printf("\nBeat intervals:\n\n");
-
-    double total_interval = 0.0;
-    int valid_intervals = 0;
-
-    for (int i = 1; i < num_beats; i++)
-    {
-        int sample_difference =
-            beat_indices[i] -
-            beat_indices[i - 1];
-
-        double interval =
-            sample_difference / SAMPLE_RATE;
-
-        double bpm =
-            60.0 / interval;
-
-        if (bpm < MIN_BPM || bpm > MAX_BPM)
-        {
-            printf(
-                "Interval %d: %.3f s (%.1f BPM) [REJECTED]\n",
-                i,
-                interval,
-                bpm
-            );
-
-            continue;
-        }
-
-        printf(
-            "Interval %d: %.3f s (%.1f BPM)\n",
-            i,
-            interval,
-            bpm
-        );
-
-        total_interval += interval;
-        valid_intervals++;
-    }
-
-    // STEP 5: Calculate average heart rate
-
-    if (valid_intervals > 0)
-    {
-        double average_interval =
-            total_interval / valid_intervals;
-
-        double average_bpm =
-            60.0 / average_interval;
-
-        printf("\n-----------------------------\n");
-        printf(
-            "Average heart rate: %.1f BPM\n",
-            average_bpm
-        );
-        printf(
-            "Valid intervals: %d\n",
-            valid_intervals
-        );
-        printf("-----------------------------\n");
-    }
-    else
-    {
-        printf("\nNo valid beat intervals found.\n");
-    }
-
-    return 0;
+    return num_beats;
 }
