@@ -31,7 +31,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+extern max30102_t max30102_1;
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -63,6 +63,15 @@ static void MX_USB_PCD_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+    //sets interrupt flag
+    if (GPIO_Pin == DRDY_Pin) {
+        max30102_on_interrupt(&max30102_1);
+    }
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -80,6 +89,8 @@ int main(void)
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
   HAL_Init();
+  init_max30102();
+  max30102_interrupt_handler(&max30102_1);
 
   /* USER CODE BEGIN Init */
 
@@ -110,6 +121,11 @@ int main(void)
 	  HAL_Delay(500);
 
     /* USER CODE BEGIN 3 */
+    if (max30102_has_interrupt(&max30102_1) == GPIO_PIN_RESET)
+    {
+      max30102_interrupt_handler(&max30102_1);   // reads status, then FIFO -> max30102_plot()
+    }
+
   }
   /* USER CODE END 3 */
 }
