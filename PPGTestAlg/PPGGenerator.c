@@ -7,7 +7,7 @@
 #define SAMPLE_RATE 400.0       // Hz
 #define DURATION 10.0           // seconds
 #define HEART_RATE 75.0         // beats per minute
-#define NOISE_AMPLITUDE 0.05   // noise level
+#define NOISE_AMPLITUDE 0.05  // noise level
 
 // Simulated pulse transit time.
 // At 400 Hz, 5 samples = 12.5 ms.
