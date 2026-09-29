@@ -4,13 +4,13 @@
 #include <math.h>
 #include <time.h>
 
-#define SAMPLE_RATE 100.0       // Hz
+#define SAMPLE_RATE 400.0       // Hz
 #define DURATION 10.0           // seconds
 #define HEART_RATE 75.0         // beats per minute
-#define NOISE_AMPLITUDE 0.02    // noise level
+#define NOISE_AMPLITUDE 0.05   // noise level
 
 // Simulated pulse transit time.
-// At 100 Hz, 5 samples = 50 ms.
+// At 400 Hz, 5 samples = 12.5 ms.
 #define PTT_DELAY_SAMPLES 5
 
 #define PI 3.14159265358979323846
