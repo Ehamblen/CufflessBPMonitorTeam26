@@ -4,17 +4,15 @@
 #include "BPEstimation.h"
 
 
-/*
- * Linear regression coefficients.
- *
- * BP = a * PTT + b
- *
- * These are PLACEHOLDER calibration values for
- * proof-of-concept testing.
- *
- * They must eventually be generated from actual
- * calibration measurements.
- */
+// Linear regression coefficients.
+//
+// BP = a * PTT + b
+//
+// These are PLACEHOLDER calibration values for
+// proof-of-concept testing.
+//
+// They must eventually be generated from actual
+// calibration measurements.
 #define SBP_SLOPE      -0.50
 #define SBP_INTERCEPT  160.0
 
@@ -22,9 +20,7 @@
 #define DBP_INTERCEPT  105.0
 
 
-/*
- * Estimate systolic blood pressure from PTT.
- */
+// Estimate systolic blood pressure from PTT.
 double EstimateSBP(double ptt_ms)
 {
     return (SBP_SLOPE * ptt_ms) +
@@ -32,9 +28,7 @@ double EstimateSBP(double ptt_ms)
 }
 
 
-/*
- * Estimate diastolic blood pressure from PTT.
- */
+// Estimate diastolic blood pressure from PTT.
 double EstimateDBP(double ptt_ms)
 {
     return (DBP_SLOPE * ptt_ms) +
@@ -44,9 +38,7 @@ double EstimateDBP(double ptt_ms)
 
 int main(void)
 {
-    /*
-     * Load PPG data.
-     */
+    // Load PPG data.
     double wrist_ppg[MAX_SAMPLES];
     double finger_ppg[MAX_SAMPLES];
 
@@ -79,9 +71,7 @@ int main(void)
     }
 
 
-    /*
-     * Calculate average PTT.
-     */
+    // Calculate average PTT.
     double average_ptt =
         CalculateAveragePTT(
             wrist_ppg,
@@ -98,9 +88,7 @@ int main(void)
     }
 
 
-    /*
-     * Estimate blood pressure.
-     */
+    // Estimate blood pressure.
     double systolic_bp =
         EstimateSBP(average_ptt);
 
@@ -108,9 +96,7 @@ int main(void)
         EstimateDBP(average_ptt);
 
 
-    /*
-     * Display results.
-     */
+    // Display results.
     printf("\n");
     printf("=============================\n");
     printf("Blood Pressure Estimation\n");

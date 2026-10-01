@@ -27,19 +27,13 @@ int ReadPPG(
         double time;
         double value;
 
-        /*
-         * Ignore blank lines.
-         */
         if (line[0] == '\n' ||
             line[0] == '\r')
         {
             continue;
         }
 
-        /*
-         * Read:
-         * Time,PPG
-         */
+
         if (sscanf(line, "%lf,%lf", &time, &value) == 2)
         {
             if (num_samples < max_samples)
@@ -63,9 +57,7 @@ double CalculateAveragePTT(
     int finger_samples
 )
 {
-    /*
-     * Use the shorter signal.
-     */
+
     int num_samples = wrist_samples;
 
     if (finger_samples < num_samples)
@@ -80,9 +72,7 @@ double CalculateAveragePTT(
     }
 
 
-    /*
-     * Detect heartbeats in both signals.
-     */
+    // Detect heartbeats in both signals.
     int wrist_beats[MAX_BEATS];
     int finger_beats[MAX_BEATS];
 
@@ -107,13 +97,11 @@ double CalculateAveragePTT(
     printf("Finger beats detected: %d\n", num_finger_beats);
 
 
-    /*
-     * Match corresponding heartbeats.
-     *
-     * For the current synthetic test data,
-     * beat 1 corresponds to beat 1,
-     * beat 2 corresponds to beat 2, etc.
-     */
+    // Match corresponding heartbeats.
+    //
+    // For the current synthetic test data,
+    // beat 1 corresponds to beat 1,
+    // beat 2 corresponds to beat 2, etc.
     int num_pairs = num_wrist_beats;
 
     if (num_finger_beats < num_pairs)
@@ -128,9 +116,7 @@ double CalculateAveragePTT(
     }
 
 
-    /*
-     * Calculate PTT for each heartbeat.
-     */
+    // Calculate PTT for each heartbeat.
     double total_ptt = 0.0;
 
     printf("\nPTT measurements:\n");
@@ -143,31 +129,23 @@ double CalculateAveragePTT(
         int finger_sample =
             finger_beats[i];
 
-        /*
-         * Calculate difference in samples.
-         */
+        // Calculate difference in samples.
         int sample_difference =
             finger_sample - wrist_sample;
 
-        /*
-         * Convert samples to seconds.
-         */
+        // Convert samples to seconds.
         double ptt_seconds =
             sample_difference / SAMPLE_RATE;
 
-        /*
-         * Convert seconds to milliseconds.
-         */
+        // Convert seconds to milliseconds.
         double ptt_ms =
             ptt_seconds * 1000.0;
 
 
-        /*
-         * Ignore negative PTT values.
-         *
-         * The finger signal should occur after the
-         * wrist signal for our current sensor arrangement.
-         */
+        // Ignore negative PTT values.
+        //
+        // The finger signal should occur after the
+        // wrist signal for our current sensor arrangement.
         if (ptt_ms > 0.0)
         {
             printf(
@@ -184,12 +162,10 @@ double CalculateAveragePTT(
     }
 
 
-    /*
-     * Calculate average PTT.
-     *
-     * For now, num_pairs is used because our synthetic
-     * signals should produce valid positive PTT values.
-     */
+    // Calculate average PTT.
+    //
+    // For now, num_pairs is used because our synthetic
+    // signals should produce valid positive PTT values.
     double average_ptt =
         total_ptt / num_pairs;
 
