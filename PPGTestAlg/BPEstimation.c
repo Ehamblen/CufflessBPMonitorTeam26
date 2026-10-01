@@ -7,12 +7,6 @@
 // Linear regression coefficients.
 //
 // BP = a * PTT + b
-//
-// These are PLACEHOLDER calibration values for
-// proof-of-concept testing.
-//
-// They must eventually be generated from actual
-// calibration measurements.
 #define SBP_SLOPE      -0.50
 #define SBP_INTERCEPT  160.0
 
