@@ -1,58 +1,46 @@
 /* USER CODE BEGIN Header */
 /**
-  ******************************************************************************
-  * @file           : main.c
-  * @brief          : Main program body
-  ******************************************************************************
-  * @attention
-  *
-  * Copyright (c) 2026 STMicroelectronics.
-  * All rights reserved.
-  *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
-  *
-  ******************************************************************************
-  */
+ ******************************************************************************
+ * @file           : main.c
+ * @brief          : Main program body
+ ******************************************************************************
+ * @attention
+ *
+ * Copyright (c) 2026 STMicroelectronics.
+ * All rights reserved.
+ *
+ * This software is licensed under terms that can be found in the LICENSE file
+ * in the root directory of this software component.
+ * If no LICENSE file comes with this software, it is provided AS-IS.
+ *
+ ******************************************************************************
+ */
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include <stdio.h>
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include <stdio.h>
 
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
-
 /* USER CODE BEGIN PTD */
 
-typedef enum
-{
-    MAX30102_OK = 0,
-    MAX30102_ERROR_I2C,
-    MAX30102_ERROR_NOT_FOUND,
-    MAX30102_ERROR_BAD_ID,
-    MAX30102_ERROR_RESET,
-    MAX30102_ERROR_CONFIG,
-    MAX30102_ERROR_FIFO
+typedef enum {
+	MAX30102_OK = 0,
+	MAX30102_ERROR_I2C,
+	MAX30102_ERROR_NOT_FOUND,
+	MAX30102_ERROR_BAD_ID,
+	MAX30102_ERROR_CONFIG,
+	MAX30102_ERROR_FIFO
 } MAX30102_Status;
 
-typedef struct
-{
-    /* Simulated or measured Red-light value */
-    uint32_t red;
-    /* Simulated or measured infrared-light value */
-    uint32_t ir;
-} PPG_Sample;
-
-typedef struct
-{
-    uint32_t timestamp_ms;
-    uint32_t red;
-    uint32_t ir;
+typedef struct {
+	uint32_t timestamp_ms;
+	uint32_t red;
+	uint32_t ir;
 } PPG_DataPoint;
 
 /* USER CODE END PTD */
@@ -60,9 +48,11 @@ typedef struct
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
-#define MAX30102_ADDR (0x57 << 1) // 7-bit I2C address, with required left shift
+
 
 /* BELOW: REGISTER MAP FOR MAX30102 */
+
+#define MAX30102_ADDR (0x57 << 1) // 7-bit I2C address, with required left shift
 
 /* Status */
 #define MAX30102_REG_INT_STATUS1 0x00
@@ -88,8 +78,6 @@ typedef struct
 #define MAX30102_REG_PART_ID 0xFF
 #define MAX30102_EXPECTED_ID 0x15
 
-/* SIMULATED PPG DATA */
-#define PPG_SIMULATION 0 // 1 = simulation; 0 = real
 #define PPG_BUFFER_SIZE 500
 
 /* USER CODE END PD */
@@ -104,6 +92,8 @@ I2C_HandleTypeDef hi2c1;
 
 SPI_HandleTypeDef hspi1;
 
+UART_HandleTypeDef huart1;
+
 PCD_HandleTypeDef hpcd_USB_FS;
 
 /* USER CODE BEGIN PV */
@@ -111,49 +101,24 @@ PCD_HandleTypeDef hpcd_USB_FS;
 /* Error Case Store */
 MAX30102_Status sensor_status = MAX30102_OK;
 
-uint8_t max30102_id = 0;
+/* Debug Variable for MAX30102 Connection */
 HAL_StatusTypeDef max30102_status;
-HAL_StatusTypeDef max30102_read_status;
 
 uint32_t ppg_red = 0;
 uint32_t ppg_ir = 0;
 
-volatile uint32_t ppg_sample_count = 0;
-volatile uint32_t ppg_i2c_error_count = 0;
-volatile uint32_t ppg_last_sample_time = 0;
-
-/* FIFO Variables */
-volatile uint8_t ppg_last_fifo_count = 0;
-volatile uint32_t ppg_fifo_error_count = 0;
-
-/* Simulation Variables + Array */
-
-static const PPG_Sample test_ppg[] =
-{
-    {50000, 70000},
-    {50100, 70120},
-    {50300, 70350},
-    {50800, 70900},
-    {51600, 71800},
-    {52500, 72800},
-    {53100, 73500},
-    {52500, 72900},
-    {51600, 71900},
-    {50700, 70900},
-    {50200, 70300},
-    {50000, 70000}
-};
-
-#define TEST_PPG_LENGTH \
-    (sizeof(test_ppg) / sizeof(test_ppg[0]))
+/* Sample & FIFO Variables */
+uint32_t ppg_sample_count = 0;
+uint32_t ppg_last_sample_time = 0;
+uint8_t ppg_last_fifo_count = 0;
+uint32_t ppg_fifo_error_count = 0;
 
 /* Storing PPG data */
 PPG_DataPoint ppg_buffer[PPG_BUFFER_SIZE];
 uint16_t ppg_write_index = 0;
 
-/* Simulation Display */
+/* PPG Output Display */
 char ppg_output_line[64];
-
 
 /* USER CODE END PV */
 
@@ -163,6 +128,7 @@ static void MX_GPIO_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_USB_PCD_Init(void);
+static void MX_USART1_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
 HAL_StatusTypeDef MAX30102_WriteReg(uint8_t reg, uint8_t value);
@@ -174,17 +140,22 @@ HAL_StatusTypeDef MAX30102_Init(void);
 uint8_t MAX30102_SamplesAvailable(void);
 HAL_StatusTypeDef MAX30102_ReadSample(uint32_t *red, uint32_t *ir);
 
-void PPG_RunSimulation(void); // Simulate PPG Sample
 void PPG_HandleSample(uint32_t red, uint32_t ir); // General Function for Sample Handling
-void PPG_ProcessSample(uint32_t red, uint32_t ir); // Simulate Red + IR Sample
+void PPG_ProcessSample(uint32_t red, uint32_t ir); // Red + IR Sample
 void PPG_StoreSample(uint32_t timestamp_ms, uint32_t red, uint32_t ir); // Store Sample
 void PPG_SendSample(uint32_t timestamp_ms, uint32_t red, uint32_t ir); // Sending Sample for Display
-
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+/* SWV ITM Data Console */
+int __io_putchar(int ch)
+{
+    ITM_SendChar(ch);
+    return ch;
+}
 
 /* USER CODE END 0 */
 
@@ -220,88 +191,85 @@ int main(void)
   MX_I2C1_Init();
   MX_SPI1_Init();
   MX_USB_PCD_Init();
-
+  MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
 
-  /* REAL Communication with MAX30102 */
-  if (PPG_SIMULATION == 0)
-  {
-	  uint8_t id;
+	/* REAL Communication with MAX30102 */
 
-	  max30102_status = HAL_I2C_IsDeviceReady(
-		  &hi2c1,
-		  MAX30102_ADDR,
-		  3,
-		  100
-	  );
+	uint8_t id;
 
-	  if (max30102_status != HAL_OK)
-	  {
-		  sensor_status = MAX30102_ERROR_NOT_FOUND;
-		  Error_Handler();
-	  }
+	max30102_status = HAL_I2C_IsDeviceReady(&hi2c1,
+	MAX30102_ADDR, 3, 100);
 
-	  if (MAX30102_ReadReg(MAX30102_REG_PART_ID, &id) != HAL_OK)
-	  {
-		  sensor_status = MAX30102_ERROR_I2C;
-		  Error_Handler();
-	  }
+	if (max30102_status != HAL_OK) {
+		sensor_status = MAX30102_ERROR_NOT_FOUND;
+		Error_Handler();
+	}
 
-	  max30102_id = id;
+	if (MAX30102_ReadReg(MAX30102_REG_PART_ID, &id) != HAL_OK) {
+		sensor_status = MAX30102_ERROR_I2C;
+		Error_Handler();
+	}
 
-	  if (max30102_id != MAX30102_EXPECTED_ID)
-	  {
-		  sensor_status = MAX30102_ERROR_BAD_ID;
-		  Error_Handler();
-	  }
+	if (id != MAX30102_EXPECTED_ID) {
+		sensor_status = MAX30102_ERROR_BAD_ID;
+		Error_Handler();
+	}
 
-	  if (MAX30102_Init() != HAL_OK)
-	  {
-		  sensor_status = MAX30102_ERROR_CONFIG;
-		  Error_Handler();
-	  }
-  }
+	if (MAX30102_Init() != HAL_OK) {
+		sensor_status = MAX30102_ERROR_CONFIG;
+		Error_Handler();
+	}
+
+	/* UART Test for Sample Collection/Display */
+	/*
+	char test_message[] = "UART WORKING\r\n";
+
+	HAL_StatusTypeDef uart_status;
+
+	uart_status = HAL_UART_Transmit(
+	    &huart1,
+	    (uint8_t *)test_message,
+	    sizeof(test_message) - 1,
+	    100
+	);
+	*/
 
   /* USER CODE END 2 */
 
   /* Infinite loop */
 
   /* USER CODE BEGIN WHILE */
-  while (1)
-  {
-	  /* SIMULATION */
-	  if (PPG_SIMULATION == 1)
-	  {
-		  PPG_RunSimulation(); // Create 1 Red + IR Sample
-		  HAL_Delay(10); // Delay of 10ms
-	  }
-	  else
-	  {
-	      ppg_last_fifo_count = MAX30102_SamplesAvailable();
 
-	      while (ppg_last_fifo_count > 0)
-	      {
-	          if (MAX30102_ReadSample(&ppg_red, &ppg_ir) == HAL_OK)
-	          {
-	              PPG_HandleSample(ppg_red, ppg_ir);
-	          }
-	          else
-	          {
-	              ppg_fifo_error_count++;
-	              sensor_status = MAX30102_ERROR_FIFO;
-	              break;
-	          }
+	// maybe convert to a "do-while"
 
-	          ppg_last_fifo_count = MAX30102_SamplesAvailable();
-	      }
-	  }
-  }
-  /* USER CODE END WHILE */
+	while (1) {
+
+		ppg_last_fifo_count = MAX30102_SamplesAvailable();
+
+		while (ppg_last_fifo_count > 0) {
+
+			if (MAX30102_ReadSample(&ppg_red, &ppg_ir) == HAL_OK) {
+				PPG_HandleSample(ppg_red, ppg_ir);
+			}
+			else {
+				ppg_fifo_error_count++;
+				sensor_status = MAX30102_ERROR_FIFO;
+				break;
+			}
+
+			ppg_last_fifo_count = MAX30102_SamplesAvailable();
+		}
+	}
+}
+
+
+    /* USER CODE END WHILE */
 
   /* USER CODE BEGIN 3 */
 
   /* USER CODE END 3 */
-}
+
 
 /**
   * @brief System Clock Configuration
@@ -342,7 +310,9 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USB|RCC_PERIPHCLK_I2C1;
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USB|RCC_PERIPHCLK_USART1
+                              |RCC_PERIPHCLK_I2C1;
+  PeriphClkInit.Usart1ClockSelection = RCC_USART1CLKSOURCE_PCLK2;
   PeriphClkInit.I2c1ClockSelection = RCC_I2C1CLKSOURCE_HSI;
   PeriphClkInit.USBClockSelection = RCC_USBCLKSOURCE_PLL;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
@@ -384,7 +354,7 @@ static void MX_I2C1_Init(void)
   */
   if (HAL_I2CEx_ConfigAnalogFilter(&hi2c1, I2C_ANALOGFILTER_ENABLE) != HAL_OK)
   {
-      Error_Handler();
+    Error_Handler();
   }
 
   /** Configure Digital filter
@@ -436,6 +406,41 @@ static void MX_SPI1_Init(void)
   /* USER CODE BEGIN SPI1_Init 2 */
 
   /* USER CODE END SPI1_Init 2 */
+
+}
+
+/**
+  * @brief USART1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART1_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART1_Init 0 */
+
+  /* USER CODE END USART1_Init 0 */
+
+  /* USER CODE BEGIN USART1_Init 1 */
+
+  /* USER CODE END USART1_Init 1 */
+  huart1.Instance = USART1;
+  huart1.Init.BaudRate = 38400;
+  huart1.Init.WordLength = UART_WORDLENGTH_8B;
+  huart1.Init.StopBits = UART_STOPBITS_1;
+  huart1.Init.Parity = UART_PARITY_NONE;
+  huart1.Init.Mode = UART_MODE_TX_RX;
+  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
+  huart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  huart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_UART_Init(&huart1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART1_Init 2 */
+
+  /* USER CODE END USART1_Init 2 */
 
 }
 
@@ -526,330 +531,227 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 
-/* WRITE + READ FUNCTIONS */
+////
+////
+////
+////
 
-HAL_StatusTypeDef MAX30102_WriteReg(uint8_t reg, uint8_t value)
-{
-    return HAL_I2C_Mem_Write(
-        &hi2c1,
-        MAX30102_ADDR,
-        reg,
-        I2C_MEMADD_SIZE_8BIT,
-        &value,
-        1,
-        100
-    );
+/* Write & Read Functions */
+HAL_StatusTypeDef MAX30102_WriteReg(uint8_t reg, uint8_t value) {
+return HAL_I2C_Mem_Write(&hi2c1,
+MAX30102_ADDR, reg,
+I2C_MEMADD_SIZE_8BIT, &value, 1, 100);
+}
+
+HAL_StatusTypeDef MAX30102_ReadReg(uint8_t reg, uint8_t *value) {
+return HAL_I2C_Mem_Read(&hi2c1,
+MAX30102_ADDR, reg,
+I2C_MEMADD_SIZE_8BIT, value, 1, 100);
+}
+
+/* Reset Function */
+HAL_StatusTypeDef MAX30102_Reset(void) {
+	HAL_StatusTypeDef status;
+	uint8_t mode;
+	uint32_t timeout;
+
+	/* Reset Bit */
+	status = MAX30102_WriteReg(MAX30102_REG_MODE_CONFIG, 0x40);
+
+	if (status != HAL_OK)
+		return status;
+
+	timeout = HAL_GetTick();
+
+	do {
+		status = MAX30102_ReadReg(MAX30102_REG_MODE_CONFIG, &mode);
+
+		if (status != HAL_OK)
+			return status;
+
+		if ((mode & 0x40) == 0)
+			return HAL_OK;
+
+	} while ((HAL_GetTick() - timeout) < 100);
+
+	return HAL_TIMEOUT;
+}
+
+/* MAX30102 Initialization */
+HAL_StatusTypeDef MAX30102_Init(void) {
+	HAL_StatusTypeDef status;
+
+	status = MAX30102_Reset();
+
+	if (status != HAL_OK) {
+		return status;
+	}
+
+	/* Clear FIFO write pointer */
+	status = MAX30102_WriteReg(
+	MAX30102_REG_FIFO_WR_PTR, 0x00);
+
+	if (status != HAL_OK) {
+		return status;
+	}
+
+	/* Clear FIFO overflow counter */
+	status = MAX30102_WriteReg(
+	MAX30102_REG_OVF_COUNTER, 0x00);
+
+	if (status != HAL_OK) {
+		return status;
+	}
+
+	/* Clear FIFO read pointer */
+	status = MAX30102_WriteReg(
+	MAX30102_REG_FIFO_RD_PTR, 0x00);
+
+	if (status != HAL_OK) {
+		return status;
+	}
+
+	/* Configure FIFO */
+	status = MAX30102_WriteReg(
+	MAX30102_REG_FIFO_CONFIG, 0x10);
+
+	if (status != HAL_OK) {
+		return status;
+	}
+
+	status = MAX30102_WriteReg(
+	MAX30102_REG_SPO2_CONFIG, 0x27);
+
+	if (status != HAL_OK) {
+		return status;
+	}
+
+	/* Set Red LED current */
+	status = MAX30102_WriteReg(
+	MAX30102_REG_LED1_PA, 0x1F);
+
+	if (status != HAL_OK) {
+		return status;
+	}
+
+	/* Set IR LED current */
+	status = MAX30102_WriteReg(
+	MAX30102_REG_LED2_PA, 0x1F);
+
+	if (status != HAL_OK) {
+		return status;
+	}
+
+	/* Start SpO2 mode: Red + IR */
+	status = MAX30102_WriteReg(
+	MAX30102_REG_MODE_CONFIG, 0x03);
+
+	return status;
+}
+
+/* Samples Available Function */
+uint8_t MAX30102_SamplesAvailable(void) {
+
+	uint8_t write_ptr;
+	uint8_t read_ptr;
+
+	if (MAX30102_ReadReg(MAX30102_REG_FIFO_WR_PTR, &write_ptr) != HAL_OK)
+		return 0;
+
+	if (MAX30102_ReadReg(MAX30102_REG_FIFO_RD_PTR, &read_ptr) != HAL_OK)
+		return 0;
+
+	return (write_ptr - read_ptr) & 0x1F;
+}
+
+/* Read Sample Function */
+HAL_StatusTypeDef MAX30102_ReadSample(uint32_t *red, uint32_t *ir) {
+
+	uint8_t data[6];
+
+	HAL_StatusTypeDef status = HAL_I2C_Mem_Read(&hi2c1,
+	MAX30102_ADDR,
+	MAX30102_REG_FIFO_DATA,
+	I2C_MEMADD_SIZE_8BIT, data, 6, 100);
+
+	if (status != HAL_OK)
+		return status;
+
+	*red = ((uint32_t) data[0] << 16) | ((uint32_t) data[1] << 8) | data[2];
+
+	*ir = ((uint32_t) data[3] << 16) | ((uint32_t) data[4] << 8) | data[5];
+
+	/* MAX30102 ADC data is 18 bits */
+	*red &= 0x3FFFF;
+	*ir &= 0x3FFFF;
+
+	return HAL_OK;
 }
 
 
-HAL_StatusTypeDef MAX30102_ReadReg(uint8_t reg, uint8_t *value)
-{
-    return HAL_I2C_Mem_Read(
-        &hi2c1,
-        MAX30102_ADDR,
-        reg,
-        I2C_MEMADD_SIZE_8BIT,
-        value,
-        1,
-        100
-    );
+void PPG_ProcessSample(uint32_t red, uint32_t ir) {
+	/*
+	 * These lines prevent compiler warnings while
+	 * we are not yet using red and ir.
+	 */
+	(void) red;
+	(void) ir;
 }
 
-/* RESET FUNCTION */
 
-HAL_StatusTypeDef MAX30102_Reset(void)
-{
-    HAL_StatusTypeDef status;
-    uint8_t mode;
-    uint32_t timeout;
+void PPG_StoreSample(uint32_t timestamp_ms, uint32_t red, uint32_t ir) {
+	ppg_buffer[ppg_write_index].timestamp_ms = timestamp_ms;
+	ppg_buffer[ppg_write_index].red = red;
+	ppg_buffer[ppg_write_index].ir = ir;
 
-    /* Reset Bit */
-    status = MAX30102_WriteReg(MAX30102_REG_MODE_CONFIG, 0x40);
+	ppg_write_index++; // Iterate Through Array
 
-    if (status != HAL_OK)
-        return status;
-
-    timeout = HAL_GetTick();
-
-    do
-    {
-        status = MAX30102_ReadReg(MAX30102_REG_MODE_CONFIG, &mode);
-
-        if (status != HAL_OK)
-            return status;
-
-        if ((mode & 0x40) == 0)
-            return HAL_OK;
-
-    } while ((HAL_GetTick() - timeout) < 100);
-
-    return HAL_TIMEOUT;
+	if (ppg_write_index >= PPG_BUFFER_SIZE) {
+		ppg_write_index = 0;
+	}
 }
 
-HAL_StatusTypeDef MAX30102_Init(void)
-{
-    HAL_StatusTypeDef status;
-
-    status = MAX30102_Reset();
-
-    if (status != HAL_OK)
-    {
-        return status;
-    }
-
-    /* Clear FIFO write pointer */
-    status = MAX30102_WriteReg(
-        MAX30102_REG_FIFO_WR_PTR,
-        0x00
-    );
-
-    if (status != HAL_OK)
-    {
-        return status;
-    }
-
-    /* Clear FIFO overflow counter */
-    status = MAX30102_WriteReg(
-        MAX30102_REG_OVF_COUNTER,
-        0x00
-    );
-
-    if (status != HAL_OK)
-    {
-        return status;
-    }
-
-    /* Clear FIFO read pointer */
-    status = MAX30102_WriteReg(
-        MAX30102_REG_FIFO_RD_PTR,
-        0x00
-    );
-
-    if (status != HAL_OK)
-    {
-        return status;
-    }
-
-    /* Configure FIFO */
-    status = MAX30102_WriteReg(
-        MAX30102_REG_FIFO_CONFIG,
-        0x10
-    );
-
-    if (status != HAL_OK)
-    {
-        return status;
-    }
-
-    /*
-     * Configure SpO2 ADC:
-     *
-     * ADC range   = 4096 nA
-     * Sample rate = 100 samples/sec
-     * Resolution  = 18 bits
-     */
-    status = MAX30102_WriteReg(
-        MAX30102_REG_SPO2_CONFIG,
-        0x27
-    );
-
-    if (status != HAL_OK)
-    {
-        return status;
-    }
-
-    /* Set Red LED current */
-    status = MAX30102_WriteReg(
-        MAX30102_REG_LED1_PA,
-        0x1F
-    );
-
-    if (status != HAL_OK)
-    {
-        return status;
-    }
-
-    /* Set IR LED current */
-    status = MAX30102_WriteReg(
-        MAX30102_REG_LED2_PA,
-        0x1F
-    );
-
-    if (status != HAL_OK)
-    {
-        return status;
-    }
-
-    /* Start SpO2 mode: Red + IR */
-    status = MAX30102_WriteReg(
-        MAX30102_REG_MODE_CONFIG,
-        0x03
-    );
-
-    return status;
-}
-
-uint8_t MAX30102_SamplesAvailable(void)
-{
-    uint8_t write_ptr;
-    uint8_t read_ptr;
-
-    if (MAX30102_ReadReg(MAX30102_REG_FIFO_WR_PTR, &write_ptr) != HAL_OK)
-        return 0;
-
-    if (MAX30102_ReadReg(MAX30102_REG_FIFO_RD_PTR, &read_ptr) != HAL_OK)
-        return 0;
-
-    return (write_ptr - read_ptr) & 0x1F;
-}
-
-HAL_StatusTypeDef MAX30102_ReadSample(uint32_t *red, uint32_t *ir)
-{
-    uint8_t data[6];
-
-    HAL_StatusTypeDef status = HAL_I2C_Mem_Read(
-        &hi2c1,
-        MAX30102_ADDR,
-        MAX30102_REG_FIFO_DATA,
-        I2C_MEMADD_SIZE_8BIT,
-        data,
-        6,
-        100
-    );
-
-    if (status != HAL_OK)
-        return status;
-
-    *red = ((uint32_t)data[0] << 16) |
-           ((uint32_t)data[1] << 8) |
-           data[2];
-
-    *ir = ((uint32_t)data[3] << 16) |
-          ((uint32_t)data[4] << 8) |
-          data[5];
-
-    /* MAX30102 ADC data is 18 bits */
-    *red &= 0x3FFFF;
-    *ir  &= 0x3FFFF;
-
-    return HAL_OK;
-}
-
-/*
- * Function:
- * PPG_ProcessSample
- *
- * Purpose:
- * Take one Red + IR PPG measurement and perform
- * signal processing on it.
- *
- * For now, this function does nothing.
- * Later, this is where you can add:
- *
- * - DC removal
- * - filtering
- * - peak detection
- * - heart-rate calculation
- * - PPG feature extraction
- * - blood-pressure estimation
- */
-void PPG_ProcessSample(uint32_t red, uint32_t ir)
-{
-    /*
-     * These lines prevent compiler warnings while
-     * we are not yet using red and ir.
-     */
-    (void)red;
-    (void)ir;
-}
-
-/* Simulation Function Calls */
-void PPG_RunSimulation(void)
-{
-    static uint32_t index = 0;
-
-    ppg_red = test_ppg[index].red;
-    ppg_ir  = test_ppg[index].ir;
-
-    PPG_HandleSample(ppg_red, ppg_ir);
-
-    index++;
-
-    if (index >= TEST_PPG_LENGTH)
-    {
-        index = 0;
-    }
-}
-
-/*
- * Function:
- * PPG_StoreSample
- *
- * Purpose:
- * Store one Red + IR PPG measurement
- * in the ppg_buffer array.
- */
-
-void PPG_StoreSample(uint32_t timestamp_ms, uint32_t red, uint32_t ir)
-{
-    ppg_buffer[ppg_write_index].timestamp_ms = timestamp_ms;
-    ppg_buffer[ppg_write_index].red = red;
-    ppg_buffer[ppg_write_index].ir = ir;
-
-    ppg_write_index++; // Iterate Through Array
-
-    if (ppg_write_index >= PPG_BUFFER_SIZE)
-    {
-        ppg_write_index = 0;
-    }
-}
-
-/*
- * Function:
- * PPG_SendSample
- *
- * Purpose:
- * Eventually send one PPG measurement to the computer.
- *
- * Desired output format:
- *
- * timestamp_ms,red,ir
- *
- * Example:
- *
- * 1020,52341,71320
- */
 
 void PPG_SendSample(uint32_t timestamp_ms, uint32_t red, uint32_t ir)
 {
-    (void)timestamp_ms;
-    (void)red;
-    (void)ir;
-
-    /* Print Statement */
-    snprintf(
-        ppg_output_line,              // Where the text will be stored
-        sizeof(ppg_output_line),      // Max memory available
-        "%lu,%lu,%lu\r\n",            // CSV formatting
-        (unsigned long)timestamp_ms,  // Time
-        (unsigned long)red,           // Red PPG value
-        (unsigned long)ir             // IR PPG value
+    int length = snprintf(
+        ppg_output_line,
+        sizeof(ppg_output_line),
+        "%lu,%lu,%lu\r\n",
+        (unsigned long)timestamp_ms,
+        (unsigned long)red,
+        (unsigned long)ir
     );
+
+    if (length > 0)
+    {
+        HAL_UART_Transmit(
+            &huart1,
+            (uint8_t *)ppg_output_line,
+            (uint16_t)length,
+            100
+        );
+    }
 }
 
-void PPG_HandleSample(uint32_t red, uint32_t ir)
-{
-    uint32_t timestamp = HAL_GetTick();
+void PPG_HandleSample(uint32_t red, uint32_t ir) {
 
-    PPG_StoreSample(timestamp, red, ir);
+	uint32_t timestamp = HAL_GetTick();
 
-    PPG_ProcessSample(red, ir);
+	PPG_StoreSample(timestamp, red, ir);
 
-    PPG_SendSample(timestamp, red, ir);
+	PPG_ProcessSample(red, ir);
 
-    ppg_sample_count++;
-    ppg_last_sample_time = timestamp;
+	PPG_SendSample(timestamp, red, ir);
+
+	ppg_sample_count++;
+	ppg_last_sample_time = timestamp;
 }
+
+////
+////
+////
+////
 
 /* USER CODE END 4 */
 
@@ -860,11 +762,10 @@ void PPG_HandleSample(uint32_t red, uint32_t ir)
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
-  /* User can add his own implementation to report the HAL error return state */
-  __disable_irq();
-  while (1)
-  {
-  }
+/* User can add his own implementation to report the HAL error return state */
+__disable_irq();
+while (1) {
+}
   /* USER CODE END Error_Handler_Debug */
 }
 #ifdef USE_FULL_ASSERT
