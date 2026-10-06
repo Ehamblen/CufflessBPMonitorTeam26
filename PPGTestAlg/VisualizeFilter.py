@@ -26,15 +26,11 @@ df.columns = df.columns.str.strip()
 
 required_columns = ["Timestamp (ms)", "Red PPG", "IR PPG"]
 
-for column in required_columns:
-    if column not in df.columns:
-        raise ValueError(f"Missing CSV column: {column}")
+
 
 df = df[required_columns].apply(pd.to_numeric, errors="coerce")
 df = df.dropna().reset_index(drop=True)
 
-if len(df) < 3:
-    raise ValueError("Not enough valid PPG samples.")
 
 time_ms = df["Timestamp (ms)"].to_numpy(dtype=float)
 raw = df[SIGNAL_COLUMN].to_numpy(dtype=float)
@@ -43,8 +39,7 @@ raw = df[SIGNAL_COLUMN].to_numpy(dtype=float)
 time_differences = np.diff(time_ms)
 positive_differences = time_differences[time_differences > 0]
 
-if len(positive_differences) == 0:
-    raise ValueError("Could not determine sample rate from timestamps.")
+
 
 sample_rate = 1000.0 / np.median(positive_differences)
 
@@ -54,17 +49,10 @@ print(f"Estimated sample rate: {sample_rate:.2f} Hz")
 print(f"Duration: {(time_ms[-1] - time_ms[0]) / 1000:.2f} seconds")
 
 
-# ---------------------------------------------------------
-# STEP 2: Estimate and remove the baseline
-# ---------------------------------------------------------
 
 raw_series = pd.Series(raw)
 
-baseline = raw_series.rolling(
-    window=BASELINE_WINDOW,
-    center=True,
-    min_periods=1
-).mean().to_numpy()
+baseline = raw_series.rolling(window=BASELINE_WINDOW,center=True,min_periods=1).mean().to_numpy()
 
 # AC component: raw PPG with estimated baseline removed.
 detrended = raw - baseline

@@ -55,9 +55,7 @@ int FindHeartbeats(const double ppg[],int num_samples,double sample_rate,int bea
     }
 
     /*
-     * ---------------------------------------------------------
-     * STEP 1: Determine minimum distance between heartbeats
-     * ---------------------------------------------------------
+     * STEP 1: Determine minimum distance between heartbeats 
      *
      * At 100 Hz and 200 BPM:
      *
@@ -71,9 +69,7 @@ int FindHeartbeats(const double ppg[],int num_samples,double sample_rate,int bea
 
 
     /*
-     * ---------------------------------------------------------
      * STEP 2: Remove the floating baseline
-     * ---------------------------------------------------------
      *
      * We estimate the baseline using a moving average.
      *
@@ -120,14 +116,7 @@ int FindHeartbeats(const double ppg[],int num_samples,double sample_rate,int bea
     }
 
 
-    /*
-     * ---------------------------------------------------------
-     * STEP 3: Smooth the detrended signal
-     * ---------------------------------------------------------
-     *
-     * A small moving average reduces high-frequency noise while
-     * preserving the general heartbeat shape.
-     */
+
     double filtered[MAX_SAMPLES];
 
     int half_smoothing_window = SMOOTHING_WINDOW / 2;
@@ -161,9 +150,7 @@ int FindHeartbeats(const double ppg[],int num_samples,double sample_rate,int bea
 
 
     /*
-     * ---------------------------------------------------------
      * STEP 4: Determine an adaptive threshold
-     * ---------------------------------------------------------
      *
      * Find the range of the FILTERED signal.
      *
@@ -194,9 +181,6 @@ int FindHeartbeats(const double ppg[],int num_samples,double sample_rate,int bea
         signal_range * THRESHOLD_FRACTION;
 
 
-    /*
-     * Print some information so we can debug the algorithm.
-     */
     printf("\r\n");
     printf("Heartbeat detector debug:\r\n");
     printf("Samples:             %d\r\n", num_samples);
@@ -210,9 +194,7 @@ int FindHeartbeats(const double ppg[],int num_samples,double sample_rate,int bea
 
 
     /*
-     * ---------------------------------------------------------
      * STEP 5: Find local maxima
-     * ---------------------------------------------------------
      */
     int num_beats = 0;
 
@@ -252,11 +234,6 @@ int FindHeartbeats(const double ppg[],int num_samples,double sample_rate,int bea
         }
 
 
-        /*
-         * -----------------------------------------------------
-         * Heartbeat detected
-         * -----------------------------------------------------
-         */
         if (num_beats < MAX_BEATS)
         {
             beat_indices[num_beats] = i;
@@ -286,11 +263,6 @@ int FindHeartbeats(const double ppg[],int num_samples,double sample_rate,int bea
                     bpm = 60.0 / seconds_between;
                 }
             }
-
-
-            /*
-             * Print the heartbeat for debugging.
-             */
             printf("Heartbeat %2d: " "sample = %4d, ""time = %8.2f ms, ""amplitude = %8.2f, ""BPM = %7.2f\r\n",num_beats + 1,i,time_ms,filtered[i],bpm);
             num_beats++;
             last_beat = i;
