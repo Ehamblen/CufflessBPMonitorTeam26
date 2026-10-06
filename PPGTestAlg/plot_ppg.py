@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 script_directory = Path(__file__).parent
 
 # Explicitly locate the CSV in the same directory
-csv_file = script_directory / "finger_ppg.csv"
+csv_file = script_directory / "PPGSample.csv"
 
 print(f"Reading: {csv_file}")
 print(f"Exists: {csv_file.exists()}")
@@ -17,9 +17,9 @@ data = pd.read_csv(csv_file, encoding="utf-8")
 
 # Plot
 plt.figure(figsize=(12, 5))
-plt.plot(data["Time"], data["PPG"])
+plt.plot(data["Timestamp (ms)"], data["IR PPG"])
 
-plt.xlabel("Time (seconds)")
+plt.xlabel("Time (ms)")
 plt.ylabel("PPG amplitude")
 plt.title("Synthetic PPG Signal")
 plt.grid(True)
