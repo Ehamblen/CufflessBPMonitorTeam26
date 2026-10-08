@@ -27,16 +27,95 @@
 /*
  * Fraction of the signal range used as the initial adaptive
  * heartbeat threshold.
- *
- * Example:
- *
- *     detrended range = 2000
- *     threshold = 0.15 * 2000
- *                = 300
- *
- * This is NOT an absolute ADC threshold.
  */
 #define THRESHOLD_FRACTION 0.15
+
+typedef struct
+{
+    const double *ppg;
+    int num_samples;
+    int next_output;
+    int next_detrended;
+    double detrended[SMOOTHING_WINDOW];
+} FilterCursor;
+
+static void FilterCursor_Init(
+    FilterCursor *cursor,
+    const double ppg[],
+    int num_samples
+)
+{
+    cursor->ppg = ppg;
+    cursor->num_samples = num_samples;
+    cursor->next_output = 0;
+    cursor->next_detrended = 0;
+}
+
+static double FilterCursor_Next(FilterCursor *cursor)
+{
+    int output_index = cursor->next_output++;
+    int half_baseline_window = BASELINE_WINDOW / 2;
+    int half_smoothing_window = SMOOTHING_WINDOW / 2;
+    int required_end = output_index + half_smoothing_window;
+
+    if (required_end >= cursor->num_samples)
+    {
+        required_end = cursor->num_samples - 1;
+    }
+
+    while (cursor->next_detrended <= required_end)
+    {
+        int index = cursor->next_detrended++;
+        int start = index - half_baseline_window;
+        int end = index + half_baseline_window;
+
+        if (start < 0)
+        {
+            start = 0;
+        }
+
+        if (end >= cursor->num_samples)
+        {
+            end = cursor->num_samples - 1;
+        }
+
+        double baseline_sum = 0.0;
+        int baseline_count = 0;
+
+        for (int sample = start; sample <= end; sample++)
+        {
+            baseline_sum += cursor->ppg[sample];
+            baseline_count++;
+        }
+
+        cursor->detrended[index % SMOOTHING_WINDOW] =
+            cursor->ppg[index] - baseline_sum / baseline_count;
+    }
+
+    int start = output_index - half_smoothing_window;
+    int end = output_index + half_smoothing_window;
+
+    if (start < 0)
+    {
+        start = 0;
+    }
+
+    if (end >= cursor->num_samples)
+    {
+        end = cursor->num_samples - 1;
+    }
+
+    double sum = 0.0;
+    int count = 0;
+
+    for (int sample = start; sample <= end; sample++)
+    {
+        sum += cursor->detrended[sample % SMOOTHING_WINDOW];
+        count++;
+    }
+
+    return sum / count;
+}
 
 
 int FindHeartbeats(const double ppg[],int num_samples,double sample_rate,int beat_indices[])
@@ -62,7 +141,7 @@ int FindHeartbeats(const double ppg[],int num_samples,double sample_rate,int bea
      *     100 * 60 / 200 = 30 samples
      *
      * This prevents one heartbeat from being detected multiple
-     * times because of small bumps/noise around the peak.
+     * times because of small bumps/noise around the peak. 
      */
     int min_beat_distance =
         (int)(sample_rate * 60.0 / MAX_BPM);
@@ -78,100 +157,31 @@ int FindHeartbeats(const double ppg[],int num_samples,double sample_rate,int bea
      * Then:
      *
      *     detrended = raw PPG - baseline
-     *
-     * This removes much of the slow DC/baseline movement.
      */
-    double baseline[MAX_SAMPLES];
-    double detrended[MAX_SAMPLES];
-
-    int half_baseline_window = BASELINE_WINDOW / 2;
-
-    for (int i = 0; i < num_samples; i++)
-    {
-        int start = i - half_baseline_window;
-        int end   = i + half_baseline_window;
-
-        if (start < 0)
-        {
-            start = 0;
-        }
-
-        if (end >= num_samples)
-        {
-            end = num_samples - 1;
-        }
-
-        double sum = 0.0;
-        int count = 0;
-
-        for (int j = start; j <= end; j++)
-        {
-            sum += ppg[j];
-            count++;
-        }
-
-        baseline[i] = sum / count;
-
-        detrended[i] = ppg[i] - baseline[i];
-    }
-
-
-
-    double filtered[MAX_SAMPLES];
-
-    int half_smoothing_window = SMOOTHING_WINDOW / 2;
-
-    for (int i = 0; i < num_samples; i++)
-    {
-        int start = i - half_smoothing_window;
-        int end   = i + half_smoothing_window;
-
-        if (start < 0)
-        {
-            start = 0;
-        }
-
-        if (end >= num_samples)
-        {
-            end = num_samples - 1;
-        }
-
-        double sum = 0.0;
-        int count = 0;
-
-        for (int j = start; j <= end; j++)
-        {
-            sum += detrended[j];
-            count++;
-        }
-
-        filtered[i] = sum / count;
-    }
-
-
     /*
-     * STEP 4: Determine an adaptive threshold
+     * STEP 3: Determine an adaptive threshold
      *
      * Find the range of the FILTERED signal.
-     *
-     * Unlike the old algorithm, this threshold is not based
-     * on the absolute MAX30102 ADC value.
-     *
-     * Therefore, baseline movement does not directly affect it.
      */
-    double signal_min = filtered[0];
-    double signal_max = filtered[0];
+    FilterCursor cursor;
+    FilterCursor_Init(&cursor, ppg, num_samples);
+
+    double first_filtered = FilterCursor_Next(&cursor);
+    double signal_min = first_filtered;
+    double signal_max = first_filtered;
 
     for (int i = 1; i < num_samples; i++)
     {
-        if (filtered[i] < signal_min)
+        double filtered = FilterCursor_Next(&cursor);
+
+        if (filtered < signal_min)
         {
-            signal_min = filtered[i];
+            signal_min = filtered;
         }
 
-        if (filtered[i] > signal_max)
+        if (filtered > signal_max)
         {
-            signal_max = filtered[i];
+            signal_max = filtered;
         }
     }
 
@@ -200,14 +210,19 @@ int FindHeartbeats(const double ppg[],int num_samples,double sample_rate,int bea
 
     int last_beat = -min_beat_distance;
 
+    FilterCursor_Init(&cursor, ppg, num_samples);
+    double previous_filtered = FilterCursor_Next(&cursor);
+    double current_filtered = FilterCursor_Next(&cursor);
+    double next_filtered = FilterCursor_Next(&cursor);
+
     for (int i = 1; i < num_samples - 1; i++)
     {
         /*
          * Check whether this sample is a local maximum.
          */
         int is_local_max =
-            filtered[i] > filtered[i - 1] &&
-            filtered[i] >= filtered[i + 1];
+            current_filtered > previous_filtered &&
+            current_filtered >= next_filtered;
 
         if (!is_local_max)
         {
@@ -219,7 +234,7 @@ int FindHeartbeats(const double ppg[],int num_samples,double sample_rate,int bea
          * The peak must be sufficiently far above the
          * detrended baseline.
          */
-        if (filtered[i] < adaptive_threshold)
+        if (current_filtered < adaptive_threshold)
         {
             continue;
         }
@@ -263,16 +278,20 @@ int FindHeartbeats(const double ppg[],int num_samples,double sample_rate,int bea
                     bpm = 60.0 / seconds_between;
                 }
             }
-            printf("Heartbeat %2d: " "sample = %4d, ""time = %8.2f ms, ""amplitude = %8.2f, ""BPM = %7.2f\r\n",num_beats + 1,i,time_ms,filtered[i],bpm);
+            printf("Heartbeat %2d: " "sample = %4d, ""time = %8.2f ms, ""amplitude = %8.2f, ""BPM = %7.2f\r\n",num_beats + 1,i,time_ms,current_filtered,bpm);
             num_beats++;
             last_beat = i;
+        }
+
+        if (i < num_samples - 2)
+        {
+            previous_filtered = current_filtered;
+            current_filtered = next_filtered;
+            next_filtered = FilterCursor_Next(&cursor);
         }
     }
 
 
-    /*
-     * Print final result.
-     */
     printf("\r\n");
     printf("Total heartbeats detected: %d\r\n", num_beats);
 
