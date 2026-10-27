@@ -39,11 +39,10 @@ typedef enum {
 } MAX30102_Status;
 
 typedef struct {
-	uint32_t timestamp_ms;
-	uint32_t red1;
-	uint32_t ir1;
-	uint32_t red2;
-	uint32_t ir2;
+    uint32_t timestamp_ms;
+    uint32_t red1; // MAX30102
+    uint32_t ir1; // MAX30102
+    uint32_t green2; // MAX30101
 } PPG_DataPoint;
 
 /* USER CODE END PTD */
@@ -79,18 +78,30 @@ typedef struct {
 #define MAX30102_REG_PART_ID 0xFF
 #define MAX30102_EXPECTED_ID 0x15
 
+/* MAX30101 additional registers */
+#define MAX30101_REG_LED3_PA          0x0E
+#define MAX30101_REG_LED4_PA          0x0F
+#define MAX30101_REG_MULTI_LED_CTRL1  0x11
+#define MAX30101_REG_MULTI_LED_CTRL2  0x12
+
+/* MAX30101 Green LED Sensor configuration */
+#define SENSOR2_GREEN_CURRENT    0x1F
+/* Temporary threshold for initial green testing */
+#define SENSOR2_GREEN_THRESHOLD  0
+
 #define PPG_BUFFER_SIZE 100
 
-#define EVENT_THRESHOLD 30000 // arbitrary
+#define EVENT_THRESHOLD 10000 // arbitrary
 
 // VARYING CURRENT FOR MAX30102 Sensors
 /* Sensor 1: Finger */
 #define SENSOR1_RED_CURRENT  0x1F
 #define SENSOR1_IR_CURRENT   0x1F
 
-/* Sensor 2: Wrist */
-#define SENSOR2_RED_CURRENT  0x08
-#define SENSOR2_IR_CURRENT   0x08
+/* Forced Counter Delay */
+#define WARMUP_SAMPLES 20
+#define MAX_PPG_SAMPLES 1000
+
 
 /* USER CODE END PD */
 
@@ -112,8 +123,7 @@ PCD_HandleTypeDef hpcd_USB_FS;
 /* Global Sample Variables for Debug View */
 uint32_t ppg_red1 = 0;
 uint32_t ppg_ir1 = 0;
-uint32_t ppg_red2 = 0;
-uint32_t ppg_ir2 = 0;
+uint32_t ppg_green2 = 0;
 
 /* Error Case Store */
 MAX30102_Status sensor_status1 = MAX30102_OK;
@@ -151,6 +161,10 @@ volatile uint32_t interrupt_count2 = 0;
 uint8_t pulse1_present = 0;
 uint8_t pulse2_present = 0;
 
+/* Forced Delay */
+uint8_t sensor1_warmup_count = 0;
+uint8_t sensor2_warmup_count = 0;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -160,6 +174,7 @@ static void MX_I2C1_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_USB_PCD_Init(void);
 static void MX_I2C2_Init(void);
+
 /* USER CODE BEGIN PFP */
 
 HAL_StatusTypeDef MAX30102_WriteReg(I2C_HandleTypeDef *hi2c, uint8_t reg,
@@ -174,16 +189,21 @@ uint8_t MAX30102_SamplesAvailable(I2C_HandleTypeDef *hi2c);
 HAL_StatusTypeDef MAX30102_ReadSample(I2C_HandleTypeDef *hi2c, uint32_t *red,
 		uint32_t *ir);
 
-void PPG_HandleSample(uint8_t sensor_number, uint32_t red, uint32_t ir); // General Function for Sample Handling
-void PPG_StoreSample(uint32_t timestamp_ms, uint32_t red1, uint32_t ir1,
-		uint32_t red2, uint32_t ir2); // Store Sample
+void PPG_HandleSample(uint8_t sensor_number, uint32_t red, uint32_t ir, uint32_t green); // General Function for Sample Handling
+void PPG_StoreSample(uint32_t timestamp_ms, uint32_t red1, uint32_t ir1, uint32_t green2); // Store Sample
 
 /* Interrupt */
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin); // Interrupt Callback
-void MAX30102_HandleInterrupt(I2C_HandleTypeDef *hi2c, uint8_t sensor_number);
+void PPG_HandleInterrupt(I2C_HandleTypeDef *hi2c, uint8_t sensor_number);
 
 /* Varing Current */
 HAL_StatusTypeDef MAX30102_SetLEDCurrent(I2C_HandleTypeDef *hi2c, uint8_t red_current, uint8_t ir_current);
+
+/* Initialization for MAX30101 */
+HAL_StatusTypeDef MAX30101_InitGreen(I2C_HandleTypeDef *hi2c);
+
+/* Read Green Light Sensor Data */
+HAL_StatusTypeDef MAX30101_ReadGreen(I2C_HandleTypeDef *hi2c, uint32_t *green);
 
 /* USER CODE END PFP */
 
@@ -283,26 +303,16 @@ int main(void) {
 		Error_Handler();
 	}
 
-	if (id2 != MAX30102_EXPECTED_ID) {
+	if (id2 != MAX30102_EXPECTED_ID) { // SAME ID FOR MAX30101, 0x15
 		sensor_status2 = MAX30102_ERROR_BAD_ID;
 		Error_Handler();
 	}
 
-	if (MAX30102_Init(&hi2c2) != HAL_OK) {
-		sensor_status2 = MAX30102_ERROR_CONFIG;
-		Error_Handler();
-	}
-
-	/* Lower Sensor 2 LED Power for Wrist Sampling */
-	if (MAX30102_SetLEDCurrent(
-	        &hi2c2,
-	        SENSOR2_RED_CURRENT,
-	        SENSOR2_IR_CURRENT
-	    ) != HAL_OK)
-	{
+	if (MAX30101_InitGreen(&hi2c2) != HAL_OK) {
 	    sensor_status2 = MAX30102_ERROR_CONFIG;
 	    Error_Handler();
 	}
+
 
 	/* Clear any existing interrupt */
 	uint8_t dummy_status;
@@ -329,7 +339,7 @@ int main(void) {
 	 */
 
 	// Header Line for CSV
-	printf("timestamp_ms,ir1,ir2\r\n");
+	printf("Timestamp (ms),IR-1 PPG,GREEN PPG\r\n");
 
 	/* USER CODE END 2 */
 
@@ -342,14 +352,14 @@ int main(void) {
 		if (max30102_data_ready1) {
 			max30102_data_ready1 = 0;
 
-			MAX30102_HandleInterrupt(&hi2c1, 1);
+			PPG_HandleInterrupt(&hi2c1, 1);
 		}
 
 		// Sensor 2 Sampling
 		if (max30102_data_ready2) {
 			max30102_data_ready2 = 0;
 
-			MAX30102_HandleInterrupt(&hi2c2, 2);
+			PPG_HandleInterrupt(&hi2c2, 2);
 		}
 	}
 }
@@ -758,6 +768,123 @@ HAL_StatusTypeDef MAX30102_Init(I2C_HandleTypeDef *hi2c) {
 
 }
 
+/* MAX30101 (GREEN) Initialization */
+
+HAL_StatusTypeDef MAX30101_InitGreen(I2C_HandleTypeDef *hi2c)
+{
+    HAL_StatusTypeDef status;
+
+    /* Reset Sensor 2 */
+    status = MAX30102_Reset(hi2c);
+    if (status != HAL_OK)
+        return status;
+
+    /* Configure FIFO */
+    status = MAX30102_WriteReg(hi2c,
+        MAX30102_REG_FIFO_CONFIG, 0x10);
+    if (status != HAL_OK)
+        return status;
+
+    /* 100 SPS, 18-bit ADC, 411 us pulse width */
+    status = MAX30102_WriteReg(hi2c,
+        MAX30102_REG_SPO2_CONFIG, 0x27);
+    if (status != HAL_OK)
+        return status;
+
+    /* Disable Red LED current */
+    status = MAX30102_WriteReg(hi2c,
+        MAX30102_REG_LED1_PA, 0x00);
+    if (status != HAL_OK)
+        return status;
+
+    /* Disable IR LED current */
+    status = MAX30102_WriteReg(hi2c,
+        MAX30102_REG_LED2_PA, 0x00);
+    if (status != HAL_OK)
+        return status;
+
+    /* Configure both Green LED current drivers */
+    status = MAX30102_WriteReg(hi2c,
+        MAX30101_REG_LED3_PA, SENSOR2_GREEN_CURRENT);
+    if (status != HAL_OK)
+        return status;
+
+    status = MAX30102_WriteReg(hi2c,
+        MAX30101_REG_LED4_PA, SENSOR2_GREEN_CURRENT);
+    if (status != HAL_OK)
+        return status;
+
+    /* Enable Green in SLOT1; disable SLOT2 */
+    status = MAX30102_WriteReg(hi2c,
+        MAX30101_REG_MULTI_LED_CTRL1, 0x03);
+    if (status != HAL_OK)
+        return status;
+
+    /* Disable SLOT3 and SLOT4 */
+    status = MAX30102_WriteReg(hi2c,
+        MAX30101_REG_MULTI_LED_CTRL2, 0x00);
+    if (status != HAL_OK)
+        return status;
+
+    /* Reset FIFO pointers */
+    status = MAX30102_WriteReg(hi2c,
+        MAX30102_REG_FIFO_WR_PTR, 0x00);
+    if (status != HAL_OK)
+        return status;
+
+    status = MAX30102_WriteReg(hi2c,
+        MAX30102_REG_OVF_COUNTER, 0x00);
+    if (status != HAL_OK)
+        return status;
+
+    status = MAX30102_WriteReg(hi2c,
+        MAX30102_REG_FIFO_RD_PTR, 0x00);
+    if (status != HAL_OK)
+        return status;
+
+    /* Enable PPG Ready interrupt */
+    status = MAX30102_WriteReg(hi2c,
+        MAX30102_REG_INT_ENABLE1, 0x40);
+    if (status != HAL_OK)
+        return status;
+
+    /* Start Multi-LED Mode */
+    status = MAX30102_WriteReg(hi2c,
+        MAX30102_REG_MODE_CONFIG, 0x07);
+
+    return status;
+}
+
+/* Green Light Data Reading */
+HAL_StatusTypeDef MAX30101_ReadGreen(I2C_HandleTypeDef *hi2c, uint32_t *green)
+{
+    uint8_t data[3];
+    HAL_StatusTypeDef status;
+
+    /* Read one Green FIFO sample */
+    status = HAL_I2C_Mem_Read(
+        hi2c,
+        MAX30102_ADDR,
+        MAX30102_REG_FIFO_DATA,
+        I2C_MEMADD_SIZE_8BIT,
+        data,
+        3,
+        100
+    );
+
+    if (status != HAL_OK)
+        return status;
+
+    /* Convert 3 bytes into 18-bit ADC measurement */
+    *green = ((uint32_t)data[0] << 16) |
+             ((uint32_t)data[1] << 8)  |
+              (uint32_t)data[2];
+
+    *green &= 0x3FFFF;
+
+    return HAL_OK;
+}
+
 /* Samples Available Function */
 uint8_t MAX30102_SamplesAvailable(I2C_HandleTypeDef *hi2c) {
 
@@ -802,97 +929,99 @@ HAL_StatusTypeDef MAX30102_ReadSample(I2C_HandleTypeDef *hi2c, uint32_t *red,
 	return HAL_OK;
 }
 
-void PPG_StoreSample(uint32_t timestamp_ms, uint32_t red1, uint32_t ir1,
-		uint32_t red2, uint32_t ir2) {
+void PPG_StoreSample(uint32_t timestamp_ms,uint32_t red1, uint32_t ir1, uint32_t green2)
+{
+    ppg_buffer[ppg_write_index].timestamp_ms = timestamp_ms;
+    ppg_buffer[ppg_write_index].red1 = red1;
+    ppg_buffer[ppg_write_index].ir1 = ir1;
+    ppg_buffer[ppg_write_index].green2 = green2;
 
-	// Store Sample Values into Array
-	ppg_buffer[ppg_write_index].timestamp_ms = timestamp_ms;
-	ppg_buffer[ppg_write_index].red1 = red1;
-	ppg_buffer[ppg_write_index].ir1 = ir1;
-	ppg_buffer[ppg_write_index].red2 = red2;
-	ppg_buffer[ppg_write_index].ir2 = ir2;
+    ppg_write_index++;
 
-	// Iterate
-	ppg_write_index++;
+    if (ppg_write_index >= PPG_BUFFER_SIZE) {
+        ppg_write_index = 0;
 
-	// New Array
-	if (ppg_write_index >= PPG_BUFFER_SIZE) {
-		ppg_write_index = 0;
-
-		// LED Indicator
-		HAL_GPIO_TogglePin(
-		LD4_GPIO_Port,
-		LD4_Pin);
-	}
+        HAL_GPIO_TogglePin(LD4_GPIO_Port, LD4_Pin);
+    }
 }
 
-void PPG_HandleSample(uint8_t sensor_number, uint32_t red, uint32_t ir) {
+void PPG_HandleSample(uint8_t sensor_number, uint32_t red, uint32_t ir, uint32_t green)
+{
+    uint32_t timestamp = HAL_GetTick();
 
-	uint32_t timestamp = HAL_GetTick();
-	// Sensor 1
-	if (sensor_number == 1) {
-		if ((red > EVENT_THRESHOLD) && (ir > EVENT_THRESHOLD)) { // Check if sample passes threshold
-			pulse1_present = 1; // update for good pulse, sensor 1
+    /* Sensor 1: MAX30102 Finger */
+    if (sensor_number == 1) {
 
-			// Assign
-			ppg_red1 = red;
-			ppg_ir1 = ir;
-			// Update for Storing
-			sensor1_new_sample = 1;
+        if ((red > EVENT_THRESHOLD) &&
+            (ir > EVENT_THRESHOLD)) {
 
-		} else { // Did not meet threshold; Reset
-			pulse1_present = 0;
-			sensor1_new_sample = 0;
-		}
-	}
+            if (sensor1_warmup_count < WARMUP_SAMPLES) {
+                sensor1_warmup_count++;
+                sensor1_new_sample = 0;
+                return;
+            }
 
-	// Sensor 2
-	else if (sensor_number == 2) {
-		if ((red > EVENT_THRESHOLD) && (ir > EVENT_THRESHOLD)) {
-			pulse2_present = 1; // update for good pulse, sensor 2
+            pulse1_present = 1;
 
-			// Assign
-			ppg_red2 = red;
-			ppg_ir2 = ir;
-			// Update for Storing
-			sensor2_new_sample = 1;
+            ppg_red1 = red;
+            ppg_ir1 = ir;
 
-		} else { // Did not meet threshold; Reset
-			pulse2_present = 0;
-			sensor2_new_sample = 0;
-		}
-	}
+            sensor1_new_sample = 1;
 
-	// Combining and Storing of Two Samples
-	if (sensor1_new_sample && sensor2_new_sample) {
+        } else {
+            pulse1_present = 0;
+            sensor1_new_sample = 0;
+        }
+    }
 
-		// Send to Store
-		PPG_StoreSample(timestamp, ppg_red1, ppg_ir1, ppg_red2, ppg_ir2);
+    /* Sensor 2: MAX30101 Wrist */
+    else if (sensor_number == 2) {
 
-		// Update Sample Count and Time
-		ppg_sample_count++;
-		ppg_last_sample_time = timestamp;
+        if (green > SENSOR2_GREEN_THRESHOLD) {
 
-		// FIVE: Print Values for Sensor Reading
-		/*
-		printf("%lu,%lu,%lu,%lu,%lu\r\n",
-				(unsigned long)timestamp,
-				(unsigned long)ppg_red1,
-				(unsigned long)ppg_ir1,
-				(unsigned long)ppg_red2,
-				(unsigned long)ppg_ir2);
-		*/
+            if (sensor2_warmup_count < WARMUP_SAMPLES) {
+                sensor2_warmup_count++;
+                sensor2_new_sample = 0;
+                return;
+            }
 
-		// THREE: Print Values for Sensor Reading
-		printf("%lu,%lu,%lu\r\n",
-				(unsigned long)timestamp,
-				(unsigned long)ppg_ir1,
-				(unsigned long)ppg_ir2);
+            pulse2_present = 1;
 
-		// Reset sensorN_new_sample to 0
-		sensor1_new_sample = 0;
-		sensor2_new_sample = 0;
-	}
+            ppg_green2 = green;
+
+            sensor2_new_sample = 1;
+
+        } else {
+            pulse2_present = 0;
+            sensor2_new_sample = 0;
+        }
+    }
+
+    /* Combine and store samples */
+    if (sensor1_new_sample &&
+        sensor2_new_sample &&
+        (ppg_sample_count < MAX_PPG_SAMPLES)) {
+
+        PPG_StoreSample(
+            timestamp,
+            ppg_red1,
+            ppg_ir1,
+            ppg_green2
+        );
+
+        ppg_sample_count++;
+        ppg_last_sample_time = timestamp;
+
+        /* SWV ITM Console output */
+        printf("%lu,%lu,%lu\r\n",
+            (unsigned long)timestamp,
+            (unsigned long)ppg_ir1,
+            (unsigned long)ppg_green2
+        );
+
+        sensor1_new_sample = 0;
+        sensor2_new_sample = 0;
+    }
 }
 
 /* Interrupt Function */
@@ -916,72 +1045,104 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 	}
 }
 
-void MAX30102_HandleInterrupt(I2C_HandleTypeDef *hi2c, uint8_t sensor_number) {
-	uint8_t interrupt_status;
-	uint8_t samples;
+void PPG_HandleInterrupt(
+    I2C_HandleTypeDef *hi2c,
+    uint8_t sensor_number)
+{
+    uint8_t interrupt_status;
+    uint8_t samples;
 
-	/*
-	 * Read interrupt status.
-	 *
-	 * Reading INT_STATUS1 also clears the
-	 * corresponding MAX30102 interrupt condition.
-	 */
+    /* Read and clear interrupt status */
+    if (MAX30102_ReadReg(
+        hi2c,
+        MAX30102_REG_INT_STATUS1,
+        &interrupt_status) != HAL_OK) {
 
-	// Register Check
-	if (MAX30102_ReadReg(hi2c, MAX30102_REG_INT_STATUS1, &interrupt_status)
-			!= HAL_OK) {
-		if (sensor_number == 1) {
-			i2c_error_count1++;
-			i2c_last_error1 = HAL_I2C_GetError(hi2c);
-			sensor_status1 = MAX30102_ERROR_I2C;
-		} else if (sensor_number == 2) {
-			i2c_error_count2++;
-			i2c_last_error2 = HAL_I2C_GetError(hi2c);
-			sensor_status2 = MAX30102_ERROR_I2C;
-		}
+        if (sensor_number == 1) {
+            i2c_error_count1++;
+            i2c_last_error1 = HAL_I2C_GetError(hi2c);
+            sensor_status1 = MAX30102_ERROR_I2C;
+        }
+        else if (sensor_number == 2) {
+            i2c_error_count2++;
+            i2c_last_error2 = HAL_I2C_GetError(hi2c);
+            sensor_status2 = MAX30102_ERROR_I2C;
+        }
 
-		return;
-	}
+        return;
+    }
 
-	// Successful Interrupt Read Update
-	if (sensor_number == 1) {
-		sensor_status1 = MAX30102_OK;
-	} else if (sensor_number == 2) {
-		sensor_status2 = MAX30102_OK;
-	}
+    /* Successful interrupt-status read */
+    if (sensor_number == 1)
+        sensor_status1 = MAX30102_OK;
+    else if (sensor_number == 2)
+        sensor_status2 = MAX30102_OK;
 
-	// Check PPG_RDY bit
-	if (interrupt_status & 0x40) {
-		samples = MAX30102_SamplesAvailable(hi2c);
+    /* Check PPG Ready interrupt */
+    if (interrupt_status & 0x40) {
 
-		while (samples > 0) {
-			uint32_t ppg_red;
-			uint32_t ppg_ir;
+        samples = MAX30102_SamplesAvailable(hi2c);
 
-			if (MAX30102_ReadSample(hi2c, &ppg_red, &ppg_ir) == HAL_OK) {
-				// Successful Read --> Handle
-				PPG_HandleSample(sensor_number, ppg_red, ppg_ir);
+        while (samples > 0) {
 
-			} else { // Unsuccessful Read
-				if (sensor_number == 1) {
-					ppg_fifo_error_count1++;
-					i2c_error_count1++;
-					i2c_last_error1 = HAL_I2C_GetError(hi2c);
+            uint32_t ppg_red = 0;
+            uint32_t ppg_ir = 0;
+            uint32_t ppg_green = 0;
 
-					sensor_status1 = MAX30102_ERROR_FIFO;
-				} else if (sensor_number == 2) {
-					ppg_fifo_error_count2++;
-					i2c_error_count2++;
-					i2c_last_error2 = HAL_I2C_GetError(hi2c);
+            HAL_StatusTypeDef read_status;
 
-					sensor_status2 = MAX30102_ERROR_FIFO;
-				}
-				break;
-			}
+            /* Sensor 1: Red + IR */
+            if (sensor_number == 1) {
 
-			samples--;
-		}
-	}
+                read_status = MAX30102_ReadSample(
+                    hi2c,
+                    &ppg_red,
+                    &ppg_ir
+                );
+            }
+
+            /* Sensor 2: Green */
+            else if (sensor_number == 2) {
+
+                read_status = MAX30101_ReadGreen(
+                    hi2c,
+                    &ppg_green
+                );
+            }
+            else {
+                return;
+            }
+
+            if (read_status == HAL_OK) {
+
+                PPG_HandleSample(
+                    sensor_number,
+                    ppg_red,
+                    ppg_ir,
+                    ppg_green
+                );
+
+            } else {
+
+                if (sensor_number == 1) {
+                    ppg_fifo_error_count1++;
+                    i2c_error_count1++;
+                    i2c_last_error1 = HAL_I2C_GetError(hi2c);
+                    sensor_status1 = MAX30102_ERROR_FIFO;
+                }
+                else if (sensor_number == 2) {
+                    ppg_fifo_error_count2++;
+                    i2c_error_count2++;
+                    i2c_last_error2 = HAL_I2C_GetError(hi2c);
+                    sensor_status2 = MAX30102_ERROR_FIFO;
+                }
+
+                break;
+            }
+
+            samples--;
+        }
+    }
 }
 
 /* Configure MAX30102 LED Drive Current */
