@@ -17,7 +17,7 @@
  *   - Expected heart rate is 40 to 200 BPM.
  *
  * Adjust these constants to match your sensor configuration.
- */
+ */ 
 
 #define MINIMUM_SAMPLES          10
 #define MINIMUM_BEATS            5
