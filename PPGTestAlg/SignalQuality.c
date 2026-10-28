@@ -10,13 +10,8 @@
  * Performs basic quality checks on a single PPG signal and its
  * detected heartbeat indices.
  *
- * Assumptions:
- *   - beat_indices contains sample indices, not timestamps.
- *   - sample_rate is expressed in Hz (samples/second).
- *   - The MAX30102 ADC output is 18-bit (0 to 262143).
- *   - Expected heart rate is 40 to 200 BPM.
  *
- * Adjust these constants to match your sensor configuration.
+ * Adjust these constants to match sensor configuration.
  */ 
 
 #define MINIMUM_SAMPLES          10
