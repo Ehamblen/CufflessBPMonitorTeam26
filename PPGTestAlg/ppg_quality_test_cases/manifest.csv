@@ -1,0 +1,17 @@
+case,expected_status,num_samples,sample_rate_hz,num_beats,description
+01_good,SIGNAL_QUALITY_GOOD,1000,100,12,"Clean, plausible ~75 BPM synthetic raw PPG"
+02_flat,SIGNAL_QUALITY_FLAT_SIGNAL,1000,100,12,Constant ADC reading; no pulse
+03_very_low_amplitude,SIGNAL_QUALITY_GOOD,1000,100,12,Near-flat signal that still passes epsilon=1e-9; demonstrates lack of meaningful amplitude threshold
+04_high_rail_clipping,SIGNAL_QUALITY_SATURATED,1000,100,12,30 of 1000 values equal full-scale MAX30102 ADC code
+05_low_rail_clipping,SIGNAL_QUALITY_SATURATED,1000,100,12,30 of 1000 samples near lower rail
+06_too_few_samples,SIGNAL_QUALITY_TOO_FEW_SAMPLES,8,100,2,Only 8 samples; short-window check takes precedence
+07_nan,SIGNAL_QUALITY_NONFINITE_DATA,1000,100,12,"One NaN sample; C strtod(""nan"") or NAN needed to load"
+08_infinity,SIGNAL_QUALITY_NONFINITE_DATA,1000,100,12,One +infinity sample
+09_too_few_beats,SIGNAL_QUALITY_TOO_FEW_BEATS,1000,100,4,"Only 4 beat indices, despite plausible PPG"
+10_too_fast_beat,SIGNAL_QUALITY_INVALID_BEAT_TIMING,1000,100,13,"20-sample interval = 300 BPM, beyond 200 BPM upper threshold"
+11_too_slow_beat,SIGNAL_QUALITY_INVALID_BEAT_TIMING,1000,100,11,"180-sample interval = 33.3 BPM, below 40 BPM lower threshold"
+12_duplicate_beat,SIGNAL_QUALITY_INVALID_BEAT_TIMING,1000,100,13,Duplicate 370 beat index (0 interval)
+13_out_of_range_beat,SIGNAL_QUALITY_INVALID_BEAT_TIMING,1000,100,13,Beat points beyond final array index 999
+14_reverse_order_beat,SIGNAL_QUALITY_INVALID_BEAT_TIMING,1000,100,13,Last beat is earlier than previous one
+15_random_noise,SIGNAL_QUALITY_GOOD,1000,100,12,Random electrical/motion noise can PASS if supplied beat indices are plausible: known limitation
+16_extremely_high_steady_adc,SIGNAL_QUALITY_GOOD,1000,100,12,High baseline but not within 2 ADC counts of a rail; passes

@@ -4,15 +4,6 @@
 #include <math.h>
 #include <stddef.h>
 
-/*
- * SignalQuality.c
- *
- * Performs basic quality checks on a single PPG signal and its
- * detected heartbeat indices.
- *
- *
- * Adjust these constants to match sensor configuration.
- */ 
 
 #define MINIMUM_SAMPLES          10
 #define MINIMUM_BEATS            5
@@ -23,19 +14,11 @@
 #define ADC_MIN_VALUE            0.0
 #define ADC_MAX_VALUE            262143.0
 #define ADC_RAIL_MARGIN          2.0
-
-/* A signal is considered saturated if at least this fraction
- * of its samples are at or near an ADC rail.
- */
 #define SATURATION_FRACTION      0.01
 
-/* A signal with a range below this threshold is considered flat. */
 #define FLAT_SIGNAL_EPSILON      1e-9
 
 
-/*
- * Initialize a result with safe default values.
- */
 static SignalQualityResult InitializeResult(void)
 {
     SignalQualityResult result;
@@ -51,12 +34,6 @@ static SignalQualityResult InitializeResult(void)
 }
 
 
-/*
- * Return the first quality error detected.
- *
- * The signal statistics and interval counts are retained in the
- * result even if a later quality check fails.
- */
 SignalQualityResult CheckSignalQuality(
     const double ppg[],
     int num_samples,
@@ -72,9 +49,8 @@ SignalQualityResult CheckSignalQuality(
     int minimum_interval;
     int maximum_interval;
 
-    /*
-     * 1. Validate the function arguments.
-     */
+    // 1. Validate the function arguments.
+
     if (ppg == NULL ||
         beat_indices == NULL ||
         num_samples <= 0 ||
@@ -92,9 +68,7 @@ SignalQualityResult CheckSignalQuality(
         return result;
     }
 
-    /*
-     * 2. Check for NaN or infinity before performing statistics.
-     */
+
     for (i = 0; i < num_samples; i++)
     {
         if (!isfinite(ppg[i]))
@@ -104,9 +78,7 @@ SignalQualityResult CheckSignalQuality(
         }
     }
 
-    /*
-     * 3. Calculate minimum, maximum, and range.
-     */
+    // 3. Calculate minimum, maximum, and range.
     result.signal_min = ppg[0];
     result.signal_max = ppg[0];
 
@@ -126,22 +98,19 @@ SignalQualityResult CheckSignalQuality(
     result.signal_range =
         result.signal_max - result.signal_min;
 
-    /*
-     * 4. Reject flat or nearly constant signals.
-     */
+    // 4. Reject flat or nearly constant signals.
+
     if (result.signal_range <= FLAT_SIGNAL_EPSILON)
     {
         result.status = SIGNAL_QUALITY_FLAT_SIGNAL;
         return result;
     }
 
-    /*
-     * 5. Check for ADC saturation.
-     *
-     * The MAX30102 has an 18-bit ADC. A sample near either
-     * rail is counted as saturated. The signal is rejected
-     * when at least 1% of samples are near an ADC rail.
-     */
+    // 5. Check for ADC saturation.
+    //
+    // The MAX30102 has an 18-bit ADC. A sample near either
+    // rail is counted as saturated. The signal is rejected
+    // when at least 1% of samples are near an ADC rail.
     for (i = 0; i < num_samples; i++)
     {
         if (ppg[i] <= ADC_MIN_VALUE + ADC_RAIL_MARGIN ||
@@ -158,48 +127,39 @@ SignalQualityResult CheckSignalQuality(
         return result;
     }
 
-    /*
-     * 6. Require enough detected beats.
-     *
-     * Three beats provide two intervals, allowing a basic
-     * check of consistency between consecutive heartbeats.
-     */
+    // 6. Require enough detected beats.
+    //
+    // Three beats provide two intervals, allowing a basic
+    // check of consistency between consecutive heartbeats.
     if (num_beats < MINIMUM_BEATS)
     {
         result.status = SIGNAL_QUALITY_TOO_FEW_BEATS;
         return result;
     }
 
-    /*
-     * 7. Convert the expected physiological heart-rate
-     * limits into allowable intervals in samples.
-     *
-     * interval = sample_rate * 60 / heart_rate
-     */
+    // 7. Convert the expected physiological heart-rate
+    // limits into allowable intervals in samples.
+    //
+    // interval = sample_rate * 60 / heart_rate
     minimum_interval =
         (int)(sample_rate * 60.0 / MAX_HEART_RATE_BPM);
 
     maximum_interval =
         (int)(sample_rate * 60.0 / MIN_HEART_RATE_BPM);
 
-    /*
-     * Prevent the minimum interval from becoming zero
-     * at unusually low sample rates.
-     */
+    // Prevent the minimum interval from becoming zero
+    // at unusually low sample rates.
     if (minimum_interval < 1)
     {
         minimum_interval = 1;
     }
 
-    /*
-     * 8. Validate beat indices and count valid intervals.
-     */
+
+    // 8. Validate beat indices and count valid intervals.
+
     result.valid_intervals = 0;
     result.invalid_intervals = 0;
 
-    /*
-     * Every beat must refer to a sample in the signal.
-     */
     for (i = 0; i < num_beats; i++)
     {
         if (beat_indices[i] < 0 ||
@@ -217,10 +177,10 @@ SignalQualityResult CheckSignalQuality(
         int interval =
             beat_indices[i + 1] - beat_indices[i];
 
-        /*
-         * Reject duplicate, reversed, implausibly short,
-         * or implausibly long beat intervals.
-         */
+        //
+        // Reject duplicate, reversed, implausibly short,
+        // or implausibly long beat intervals.
+        //
         if (interval < minimum_interval ||
             interval > maximum_interval)
         {
@@ -232,13 +192,8 @@ SignalQualityResult CheckSignalQuality(
         }
     }
 
-    /*
-     * 9. Require at least one valid interval and reject
-     * the signal if any interval has invalid timing.
-     *
-     * This conservative policy avoids estimating BP from
-     * a window containing potentially missed or false beats.
-     */
+    // 9. Require at least one valid interval and reject
+    // the signal if any interval has invalid timing.
     if (result.valid_intervals == 0 ||
         result.invalid_intervals > 0)
     {
@@ -246,9 +201,9 @@ SignalQualityResult CheckSignalQuality(
         return result;
     }
 
-    /*
-     * 10. All quality checks passed.
-     */
+
+    // 10. All quality checks passed.
+
     result.status = SIGNAL_QUALITY_GOOD;
 
     return result;
