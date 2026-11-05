@@ -85,8 +85,6 @@ typedef struct {
 #define MAX30101_REG_MULTI_LED_CTRL1  0x11
 #define MAX30101_REG_MULTI_LED_CTRL2  0x12
 
-/* MAX30101 Green LED Sensor configuration */
-#define SENSOR2_GREEN_CURRENT    0x1F
 /* Temporary threshold for initial green testing */
 #define SENSOR2_GREEN_THRESHOLD  0
 
@@ -96,11 +94,12 @@ typedef struct {
 
 // VARYING CURRENT FOR MAX30102 Sensors
 /* Sensor 1: Finger */
-#define SENSOR1_RED_CURRENT  0x1F
-#define SENSOR1_IR_CURRENT   0x1F
+#define SENSOR1_RED_CURRENT  0x00 // off
+#define SENSOR1_IR_CURRENT   0x0F
+#define SENSOR2_GREEN_CURRENT 0x3F
 
 /* Forced Counter Delay */
-#define WARMUP_SAMPLES 20
+#define WARMUP_SAMPLES 200
 #define MAX_PPG_SAMPLES 700
 
 /* USER CODE END PD */

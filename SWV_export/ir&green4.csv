@@ -1,5 +1,4 @@
-SWV ITM Data Console - ITM Port: 0
-imestamp_IR_ms,IR_PPG,Timestamp_GR_ms,GREEN_PPG
+Timestamp_IR_ms,IR_PPG,Timestamp_GR_ms,GREEN_PPG
 24,93821,38,13692
 45,93865,43,13708
 48,93945,52,13741
