@@ -48,6 +48,8 @@
 
 #include <stdio.h>
 #include "heartbeat.h"
+#include "PTTCalc.h"
+#include "BPEstimation.h"
 
 
 
@@ -374,6 +376,11 @@ volatile float finger_bpm = 0.0f;
 volatile float wrist_bpm = 0.0f;
 volatile uint8_t heartbeat_test_done = 0;
 volatile uint8_t heartbeat_test_timeout = 0;
+/* Values available in debugger after the one-shot run. */
+volatile double bp_average_ptt_ms = -1.0;
+volatile double bp_estimated_sbp_mmhg = 0.0;
+volatile double bp_estimated_dbp_mmhg = 0.0;
+volatile int bp_ptt_pair_count = 0;
 
 /* USER CODE END PV */
 
@@ -471,6 +478,7 @@ HAL_StatusTypeDef MAX3010x_Shutdown(I2C_HandleTypeDef *hi2c);
 
 static float Heartbeat_ComputeBPM(const int *beats, int count);
 static void Heartbeat_RunTest(void);
+static void BP_RunEndToEndTest(void);
 /* USER CODE END PFP */
 
 
@@ -782,6 +790,7 @@ int main(void) {
     }
 
     Heartbeat_RunTest();
+    BP_RunEndToEndTest();
     heartbeat_test_done = 1;
 
     /* Keep debugger attached so counts and beats are inspectable. */
@@ -2058,6 +2067,52 @@ static void Heartbeat_RunTest(void) {
 }
 
 
+
+/* End-to-end integration test, using already detected peaks. No floating
+ * printf needed: display measurements in tenths as unsigned/signed integers.
+ * Peaks are paired by ordinal position, not proven to be the same heartbeat.
+ */
+static void BP_RunEndToEndTest(void) {
+    double ptt_values_ms[HEARTBEAT_MAX_BEATS];
+    double average_ptt_ms = -1.0;
+    int pairs = CalculatePTTFromBeats(wrist_beat_indices, wrist_beat_count,
+                                     finger_beat_indices, finger_beat_count,
+                                     PPG_SAMPLE_RATE_HZ, ptt_values_ms,
+                                     HEARTBEAT_MAX_BEATS, &average_ptt_ms);
+    bp_ptt_pair_count = pairs;
+    printf("\r\nBP_TEST,begin,provisional_index_based\r\n");
+    printf("BP_TEST,samples,finger,%u,wrist,%u\r\n",
+           (unsigned)finger_ir_count, (unsigned)wrist_green_count);
+    if (finger_ir_count != wrist_green_count)
+        printf("BP_TEST,note,unequal_sample_counts_ignored\r\n");
+    if (pairs == 0) {
+        printf("BP_TEST,error,no_paired_beats\r\n");
+        return;
+    }
+    if (finger_beat_count != wrist_beat_count)
+        printf("BP_TEST,note,unmatched_extra_beats_ignored\r\n");
+    printf("BP_PTT,beat,wrist_index,finger_index,ptt_ms_x10\r\n");
+    for (int i = 0; i < pairs; ++i) {
+        unsigned long ptt_x10 = (unsigned long)(ptt_values_ms[i] * 10.0 + 0.5);
+        printf("BP_PTT,%d,%d,%d,%lu\r\n", i + 1,
+               wrist_beat_indices[i], finger_beat_indices[i], ptt_x10);
+    }
+    bp_average_ptt_ms = average_ptt_ms;
+    bp_estimated_sbp_mmhg = EstimateSBP(average_ptt_ms);
+    bp_estimated_dbp_mmhg = EstimateDBP(average_ptt_ms);
+
+    /* Signed fixed-point conversion: handles negative placeholder outputs. */
+    long ptt_x10 = (long)(average_ptt_ms * 10.0 + 0.5);
+    double sbp10 = bp_estimated_sbp_mmhg * 10.0;
+    double dbp10 = bp_estimated_dbp_mmhg * 10.0;
+    long sbp_x10 = (long)(sbp10 + (sbp10 >= 0.0 ? 0.5 : -0.5));
+    long dbp_x10 = (long)(dbp10 + (dbp10 >= 0.0 ? 0.5 : -0.5));
+    printf("BP_RESULT,pairs,%d\r\n", pairs);
+    printf("BP_RESULT,average_ptt_ms_x10,%ld\r\n", ptt_x10);
+    printf("BP_RESULT,estimated_sbp_mmhg_x10,%ld\r\n", sbp_x10);
+    printf("BP_RESULT,estimated_dbp_mmhg_x10,%ld\r\n", dbp_x10);
+    printf("BP_TEST,end,not_medically_validated\r\n");
+}
 
 /* Interrupt Function */
 

@@ -7,6 +7,7 @@
 #define HB_THRESHOLD_FRACTION 0.35
 #define HB_MIN_BPM 40.0
 #define HB_MAX_BPM 140.0
+#define HB_PEAK_WINDOW 5
 
 /* Workspace is static to avoid ~5.6 KB temporary stack allocation. */
 static double hb_filtered[HB_MAX_SAMPLES];
@@ -56,23 +57,60 @@ int FindHeartbeats(const double *ppg, int n, double sample_rate,
     const int min_gap = (int)(60.0 * sample_rate / HB_MAX_BPM);
     const int max_gap = (int)(60.0 * sample_rate / HB_MIN_BPM);
     int count = 0;
-    for (i = 1; i < n - 1; ++i) {
-        if (hb_filtered[i] <= threshold ||
-            hb_filtered[i] < hb_filtered[i - 1] ||
-            hb_filtered[i] <= hb_filtered[i + 1]) continue;
-        if (count > 0) {
+
+    for (i = HB_PEAK_WINDOW;
+         i < n - HB_PEAK_WINDOW;
+         ++i)
+    {
+        // Candidate must exceed the adaptive threshold.
+        if (hb_filtered[i] <= threshold)
+            continue;
+
+        // Check whether this sample is the maximum
+        // within +/- HB_PEAK_WINDOW samples.
+        int is_peak = 1;
+
+        for (j = i - HB_PEAK_WINDOW;
+             j <= i + HB_PEAK_WINDOW;
+             ++j)
+        {
+            if (j == i)
+                continue;
+
+            if (hb_filtered[j] > hb_filtered[i] ||
+                (hb_filtered[j] == hb_filtered[i] && j < i))
+            {
+                is_peak = 0;
+                break;
+            }
+        }
+
+        if (!is_peak)
+            continue;
+
+        // Existing refractory-period logic.
+        if (count > 0)
+        {
             int gap = i - beat_indices[count - 1];
-            if (gap < min_gap) {
-                if (hb_filtered[i] > hb_filtered[beat_indices[count - 1]])
+
+            if (gap < min_gap)
+            {
+                // Retain the stronger detected peak.
+                if (hb_filtered[i] >
+                    hb_filtered[beat_indices[count - 1]])
+                {
                     beat_indices[count - 1] = i;
+                }
+
                 continue;
             }
-            /* Larger gaps are permitted, but flag likely missing beats via
-               BPM/beat-timing validation outside this function. */
-            (void)max_gap;
         }
-        if (count >= max_beats) break;
+
+        if (count >= max_beats)
+            break;
+
         beat_indices[count++] = i;
     }
+
     return count;
 }

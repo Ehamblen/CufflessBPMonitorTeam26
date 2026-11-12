@@ -1,17 +1,11 @@
 #ifndef BP_ESTIMATION_H
 #define BP_ESTIMATION_H
 
-// Estimate systolic blood pressure from PTT.
-//
-// PTT is provided in milliseconds.
-// Returns estimated SBP in mmHg.
+/* PROVISIONAL two-point model placeholder: assumes reference BP of 120/80
+ * mmHg at a reference PTT of 80 ms, NOT patient-specific calibration.
+ * Do not use these outputs for clinical decisions.
+ */
 double EstimateSBP(double ptt_ms);
-
-
-// Estimate diastolic blood pressure from PTT.
-//
-// PTT is provided in milliseconds.
-// Returns estimated DBP in mmHg.
 double EstimateDBP(double ptt_ms);
 
 #endif
